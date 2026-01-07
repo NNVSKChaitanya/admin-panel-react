@@ -3,8 +3,8 @@ import { X, Save, Loader2, Plus, Trash2, User, CreditCard } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import type { Registration, Member } from '../types';
 import { useAppStore } from '../store/useAppStore';
-import { getApp } from 'firebase/app';
-import { getFirestore, doc, updateDoc } from 'firebase/firestore';
+import { getDynamicApp, getMasterApp } from '../services/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface Props {
     isOpen: boolean;
@@ -41,7 +41,7 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
             });
             setMembers(data.members ? [...data.members] : []);
         }
-    }, [data]);
+    }, [data, isOpen]);
 
     if (!isOpen || !data) return null;
 
@@ -65,8 +65,9 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
         setIsSaving(true);
 
         try {
-            const app = getApp(currentYatra.id);
-            const db = getFirestore(app);
+            const { db } = currentYatra.isMaster
+                ? getMasterApp()
+                : getDynamicApp(currentYatra.id, currentYatra.config);
 
             const updatedData: any = {
                 ...formData,

@@ -13,7 +13,7 @@ import { UndoCancellationModal } from '../components/UndoCancellationModal';
 import { EditCancellationModal } from '../components/EditCancellationModal';
 
 export const Registrations = () => {
-    const { currentYatra } = useAppStore();
+    const { currentYatra, user } = useAppStore();
     const [viewMode, setViewMode] = useState<'registrations' | 'cancellations'>('registrations');
     const { data: registrations = [], isLoading: isLoadingRegs } = useRegistrations();
     const { data: cancellations = [], isLoading: isLoadingCancels } = useCancellations();
@@ -82,13 +82,17 @@ export const Registrations = () => {
             cols = [...baseRegColumns];
         }
 
-        // Always append actions
-        cols.push({ key: 'actions', label: 'Actions', type: 'actions' });
+        // Always append actions IF logged in
+        if (user) {
+            cols.push({ key: 'actions', label: 'Actions', type: 'actions' });
+        }
 
         return cols;
-    }, [viewMode, baseRegColumns]);
+    }, [viewMode, baseRegColumns, user]);
 
     const handleAction = (action: string, item: any) => {
+        if (!user) return; // Guard clause
+
         if (viewMode === 'registrations') {
             const reg = item as Registration;
             switch (action) {
@@ -134,7 +138,7 @@ export const Registrations = () => {
     return (
         <div className="space-y-6 animate-fade-in pb-20">
             {/* Header Controls */}
-            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 bg-gray-900/40 p-4 rounded-xl border border-white/5 backdrop-blur-sm">
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 bg-gray-900/40 p-4 rounded-xl border border-white/5">
 
                 {/* View Toggles */}
                 <div className="flex rounded-lg bg-black/20 p-1 border border-white/5">

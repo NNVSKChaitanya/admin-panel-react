@@ -101,7 +101,7 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
     }
 
     return (
-        <div className="w-full overflow-hidden rounded-lg border border-white/5 bg-black/20 backdrop-blur-sm">
+        <div className="w-full overflow-hidden rounded-lg border border-white/5 bg-black/20">
             <table className="w-full text-sm text-left text-gray-300">
                 <thead className="text-xs text-gray-400 uppercase bg-black/20 border-b border-white/5">
                     <tr>
@@ -125,7 +125,7 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
                                     onClick={() => col.key !== 'actions' && onRowClick?.(row)}
                                 >
                                     {col.key === 'actions' && onAction ? (
-                                        <div className="flex items-center gap-1 justify-end">
+                                        <div className="flex items-center gap-1 justify-center">
                                             {actionsType === 'registrations' ? (
                                                 <>
                                                     <button type="button" onClick={(e) => { e.stopPropagation(); onAction('view', row); }} className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/10 transition-colors" title="View Details">
