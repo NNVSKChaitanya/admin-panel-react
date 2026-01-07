@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Loader2, Plus, Trash2, User, CreditCard } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import type { Registration, Member } from '../types';
+import type { Registration, Member, Installment } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -17,6 +17,7 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
     const { currentYatra } = useAppStore();
     const [formData, setFormData] = useState<Partial<Registration>>({});
     const [members, setMembers] = useState<Member[]>([]);
+    const [installments, setInstallments] = useState<Installment[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<'details' | 'members'>('details');
 
@@ -29,7 +30,7 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                 whatsapp: data.whatsapp,
                 address: data.address,
                 remarks: data.remarks,
-                paymentStatus: data.paymentStatus,
+                paymentStatus: data.paymentStatus || data.paymentDetails?.paymentStatus, // Fallback to nested
                 joinedWhatsapp: data.joinedWhatsapp,
                 utr: data.utr,
                 familyId: data.familyId || data.id,
@@ -40,6 +41,7 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                 // Let's assume root fields are primary or mapped.
             });
             setMembers(data.members ? [...data.members] : []);
+            setInstallments(data.paymentDetails?.installments ? [...data.paymentDetails.installments] : []);
         }
     }, [data, isOpen]);
 
@@ -60,6 +62,12 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
         setMembers([...members, { name: '', age: '', gender: 'Male' }]);
     };
 
+    const handleInstallmentChange = (index: number, field: keyof Installment, value: any) => {
+        const updated = [...installments];
+        updated[index] = { ...updated[index], [field]: value };
+        setInstallments(updated);
+    };
+
     const handleSave = async () => {
         if (!currentYatra || !data.id) return;
         setIsSaving(true);
@@ -77,29 +85,57 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
 
             // Basic logic: If flat schema is used, update totalAmount based on member count?
             // Or trust the user to manually edit amount? 
-            // In original code: `updatedData.totalAmount = updatedData.members.length * 5000;`
+            // In original code: `updatedData.totalAmount = updatedData.members.length * 5000; `
             // We should probably replicate that logic or leave it purely to manual overrides if we had an amount field.
             // For safety, let's recalculate totalAmount if it's a fixed price yatra (Puri).
             // But to be generic, we might skip auto-calc for now unless explicitly requested.
-            // Wait, original code strictly did: `updatedData.totalAmount = updatedData.members.length * 5000;`
+            // Wait, original code strictly did: `updatedData.totalAmount = updatedData.members.length * 5000; `
             // Let's preserve member count based calculation if it was there, but maybe safer to NOT touch amount automatically unless we know price.
 
-            // However, we MUST sync the 'paymentStatus' if it's nested structure.
+            // Sync Payment Details if they exist (Dynamic / Hampi Style)
             if (data.paymentDetails) {
                 updatedData.paymentDetails = {
                     ...data.paymentDetails,
-                    paymentStatus: formData.paymentStatus, // Sync
-                    utrNumber: formData.utr // Sync
+                    paymentStatus: formData.paymentStatus, // Sync root status to nested
+                    utrNumber: formData.utr, // Sync root UTR to nested
+                    installments: installments // Update installments
                 };
+
+                // Recalculate amounts if using installments
+                if (installments.length > 0) {
+                    const totalPaid = installments
+                        .filter(i => i.status === 'paid' || i.status === 'verification_pending')
+                        .reduce((sum, i) => sum + Number(i.amount), 0);
+
+                    updatedData.paymentDetails.amountPaid = totalPaid;
+                    // We don't auto-update totalAmount, assuming it's fixed per package but could be editable field in future
+                }
             }
+
+            // detailed deep cleanup to remove undefined values safely
+            const removeUndefined = (obj: any) => {
+                if (obj === null || typeof obj !== 'object') return obj;
+
+                Object.keys(obj).forEach(key => {
+                    if (obj[key] === undefined) {
+                        delete obj[key];
+                    } else if (typeof obj[key] === 'object') {
+                        removeUndefined(obj[key]);
+                    }
+                });
+                return obj;
+            };
+
+            removeUndefined(updatedData);
 
             await updateDoc(doc(db, 'registrations', data.id), updatedData);
 
             onSuccess();
             onClose();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error updating registration:", error);
-            alert("Failed to update registration");
+            // Detailed alert for debugging
+            alert(`Failed to update registration: ${error.message || error} `);
         } finally {
             setIsSaving(false);
         }
@@ -187,55 +223,109 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                             {/* Status Section */}
                             <div className="space-y-4 pt-4 border-t border-white/5">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                                    <CreditCard className="w-4 h-4" /> Status & ID
+                                    <CreditCard className="w-4 h-4" /> Payment & Status
                                 </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="label-text">Payment Status</label>
-                                        <select
-                                            className="input-glass w-full bg-[#0f111a]" // Select needs solid bg
-                                            value={formData.paymentStatus || 'pending_verification'}
-                                            onChange={e => setFormData({ ...formData, paymentStatus: e.target.value })}
-                                        >
-                                            <option value="pending_verification">Pending Verification</option>
-                                            <option value="verified">Verified</option>
-                                            <option value="partial_payment">Partial Payment</option>
-                                            <option value="no_payment">No Payment</option>
-                                        </select>
+
+                                {/* Dynamic Payment View */}
+                                {data.paymentDetails?.paymentType === 'installment' ? (
+                                    <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-3">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-sm font-medium text-white">Installment Plan</span>
+                                            <span className="text-xs text-purple-400 font-bold">
+                                                Total: ₹{data.paymentDetails.totalAmount}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {installments.map((inst, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 text-sm bg-black/20 p-2 rounded border border-white/5">
+                                                    <div className="flex-1 min-w-0">
+                                                        <input
+                                                            className="bg-transparent text-gray-300 w-full outline-none text-xs"
+                                                            value={inst.name}
+                                                            onChange={e => handleInstallmentChange(idx, 'name', e.target.value)}
+                                                        />
+                                                        <input
+                                                            className="bg-transparent text-[10px] text-gray-500 w-full outline-none"
+                                                            value={inst.dueDate}
+                                                            onChange={e => handleInstallmentChange(idx, 'dueDate', e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="w-20">
+                                                        <input
+                                                            type="number"
+                                                            className="bg-transparent text-white font-mono text-right w-full outline-none border-b border-white/5 focus:border-purple-500/50"
+                                                            value={inst.amount}
+                                                            onChange={e => handleInstallmentChange(idx, 'amount', e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="w-32">
+                                                        <select
+                                                            className={`w-full text-[10px] uppercase font-bold py-1 px-1 rounded outline-none border border-transparent focus:border-white/10 ${inst.status === 'paid' ? 'bg-green-500/10 text-green-400' :
+                                                                inst.status === 'verification_pending' ? 'bg-yellow-500/10 text-yellow-400' :
+                                                                    'bg-red-500/10 text-red-400'
+                                                                }`}
+                                                            value={inst.status}
+                                                            onChange={e => handleInstallmentChange(idx, 'status', e.target.value)}
+                                                        >
+                                                            <option value="pending" className="bg-gray-800 text-red-400">Pending</option>
+                                                            <option value="verification_pending" className="bg-gray-800 text-yellow-400">Verifying</option>
+                                                            <option value="paid" className="bg-gray-800 text-green-400">Paid</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="label-text">Joined WhatsApp Group?</label>
-                                        <select
-                                            className="input-glass w-full bg-[#0f111a]"
-                                            value={formData.joinedWhatsapp || 'no'}
-                                            onChange={e => setFormData({ ...formData, joinedWhatsapp: e.target.value as 'yes' | 'no' })}
-                                        >
-                                            <option value="no">No</option>
-                                            <option value="yes">Yes</option>
-                                        </select>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="label-text">Payment Status</label>
+                                            <select
+                                                className="input-glass w-full bg-[#0f111a]"
+                                                value={formData.paymentStatus || 'pending_verification'}
+                                                onChange={e => setFormData({ ...formData, paymentStatus: e.target.value })}
+                                            >
+                                                <option value="pending_verification">Pending Verification</option>
+                                                <option value="verified">Verified</option>
+                                                <option value="partial_payment">Partial Payment</option>
+                                                <option value="no_payment">No Payment</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="label-text">Joined WhatsApp?</label>
+                                            <select
+                                                className="input-glass w-full bg-[#0f111a]"
+                                                value={formData.joinedWhatsapp || 'no'}
+                                                onChange={e => setFormData({ ...formData, joinedWhatsapp: e.target.value as 'yes' | 'no' })}
+                                            >
+                                                <option value="no">No</option>
+                                                <option value="yes">Yes</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="label-text">UTR / Transaction ID</label>
+                                            <input type="text" className="input-glass w-full"
+                                                value={formData.utr || ''}
+                                                onChange={e => setFormData({ ...formData, utr: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="label-text">Family ID</label>
+                                            <input type="text" className="input-glass w-full"
+                                                value={formData.familyId || ''}
+                                                onChange={e => setFormData({ ...formData, familyId: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="label-text">UTR / Transaction ID</label>
-                                        <input type="text" className="input-glass w-full"
-                                            value={formData.utr || ''}
-                                            onChange={e => setFormData({ ...formData, utr: e.target.value })}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="label-text">Family ID</label>
-                                        <input type="text" className="input-glass w-full"
-                                            value={formData.familyId || ''}
-                                            onChange={e => setFormData({ ...formData, familyId: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <label className="label-text">Remarks</label>
-                                        <textarea className="input-glass w-full h-20 resize-none"
-                                            value={formData.remarks || ''}
-                                            onChange={e => setFormData({ ...formData, remarks: e.target.value })}
-                                            placeholder="Internal admin notes..."
-                                        />
-                                    </div>
+                                )}
+
+                                <div className="mt-4">
+                                    <label className="label-text">Remarks</label>
+                                    <textarea className="input-glass w-full h-20 resize-none"
+                                        value={formData.remarks || ''}
+                                        onChange={e => setFormData({ ...formData, remarks: e.target.value })}
+                                        placeholder="Internal admin notes..."
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -260,8 +350,8 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </button>
-                                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                                            <div className="md:col-span-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                                            <div className="md:col-span-4">
                                                 <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Full Name</label>
                                                 <input
                                                     type="text"
@@ -271,7 +361,7 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                                                     onChange={e => handleMemberChange(idx, 'name', e.target.value)}
                                                 />
                                             </div>
-                                            <div className="md:col-span-1">
+                                            <div className="md:col-span-2">
                                                 <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Age</label>
                                                 <input
                                                     type="number"
@@ -292,6 +382,32 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                                                     <option value="Other">Other</option>
                                                 </select>
                                             </div>
+
+                                            {/* Dynamic Fields - Only show if data suggests packages exist */}
+                                            {(members.some(m => m.packageName) || currentYatra?.config?.projectId?.includes('hampi')) && (
+                                                <>
+                                                    <div className="md:col-span-2">
+                                                        <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Package</label>
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm focus:border-purple-500/50 outline-none text-white"
+                                                            value={member.packageName || ''}
+                                                            placeholder="e.g. 2 AC"
+                                                            onChange={e => handleMemberChange(idx, 'packageName', e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div className="md:col-span-2">
+                                                        <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Room</label>
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm focus:border-purple-500/50 outline-none text-white"
+                                                            value={member.roomNumber || ''}
+                                                            placeholder="Room No"
+                                                            onChange={e => handleMemberChange(idx, 'roomNumber', e.target.value)}
+                                                        />
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 ))}

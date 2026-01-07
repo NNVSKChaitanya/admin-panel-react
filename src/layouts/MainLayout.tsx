@@ -5,12 +5,14 @@ import { cn } from '../lib/utils';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { LoginModal } from '../components/Auth/LoginModal';
 import { EditYatraSettingsModal } from '../components/EditYatraSettingsModal';
+import { AddYatraModal } from '../components/AddYatraModal';
 
 export const MainLayout = () => {
     const { yatras, currentYatraId, setCurrentYatra, loadYatrasFromMaster, currentYatra, user, logout } = useAppStore();
     const [collapsed, setCollapsed] = useState(false);
     const [isLoginOpen, setIsLoginOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isAddYatraOpen, setIsAddYatraOpen] = useState(false);
     const location = useLocation();
 
     const isActive = (path: string) => location.pathname.includes(path);
@@ -49,10 +51,12 @@ export const MainLayout = () => {
                 <div className="p-4">
                     {/* Add Yatra Button - Only visible if Admin */}
                     {user?.role === 'admin' && (
-                        <button className={cn(
-                            "flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-3 text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all active:scale-95 group border border-white/10",
-                            collapsed ? "px-0" : "px-4"
-                        )}>
+                        <button
+                            onClick={() => setIsAddYatraOpen(true)}
+                            className={cn(
+                                "flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 py-3 text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/25 transition-all active:scale-95 group border border-white/10",
+                                collapsed ? "px-0" : "px-4"
+                            )}>
                             <PlusCircle className="w-5 h-5 group-hover:rotate-90 transition-transform" />
                             <span className={cn("transition-all", collapsed ? "hidden w-0" : "block")}>New Yatra</span>
                         </button>
@@ -177,6 +181,12 @@ export const MainLayout = () => {
             <EditYatraSettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
+            />
+
+            {/* Add Yatra Modal */}
+            <AddYatraModal
+                isOpen={isAddYatraOpen}
+                onClose={() => setIsAddYatraOpen(false)}
             />
         </div>
     );
