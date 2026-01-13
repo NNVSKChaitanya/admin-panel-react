@@ -40,20 +40,21 @@ export const Dashboard = () => {
 
         registrations.forEach(reg => {
             // 1. Finances
-            // Support both Puri (flat) and Hampi (nested) structures
-            const amount = reg.paymentDetails?.totalAmount || reg.totalAmount || 0;
-            const paid = reg.paymentDetails?.amountPaid || reg.totalAmount || 0; // Assuming Puri is fully paid if present
+            // For yatras with installments (Hampi style), use amountPaid (actual collection).
+            // For simple yatras (Puri style), use totalAmount (assumed full payment).
+            const revenue = reg.paymentDetails ? (reg.paymentDetails.amountPaid || 0) : (reg.totalAmount || 0);
 
-            totalAmount += amount;
+            totalAmount += revenue;
 
-            // Heuristic for Online vs Cash: 
-            // If Hampi: check paymentType or UTR. If Puri: check UTR format? 
-            // For now, let's assume if UTR exists = Online, else Cash (simplification)
-            const isOnline = reg.paymentDetails?.utrNumber || reg.utr;
-            if (isOnline) {
-                onlineAmount += paid;
+            // Online vs Cash Classification
+            // Check UTR for "cash" string (case-insensitive)
+            const utr = reg.utr || reg.paymentDetails?.utrNumber || '';
+            const isCash = utr.toLowerCase().includes('cash');
+
+            if (isCash) {
+                cashAmount += revenue;
             } else {
-                cashAmount += paid;
+                onlineAmount += revenue;
             }
 
             if (reg.paymentStatus === 'pending_verification' || reg.paymentDetails?.paymentStatus === 'verification_pending') {

@@ -15,6 +15,7 @@ import { EditCancellationModal } from '../components/EditCancellationModal';
 export const Registrations = () => {
     const { currentYatra, user } = useAppStore();
     const [viewMode, setViewMode] = useState<'registrations' | 'cancellations'>('registrations');
+    const [paymentMode, setPaymentMode] = useState<'online' | 'cash'>('online');
     const { data: registrations = [], isLoading: isLoadingRegs } = useRegistrations();
     const { data: cancellations = [], isLoading: isLoadingCancels } = useCancellations();
 
@@ -40,6 +41,16 @@ export const Registrations = () => {
     const filteredData = useMemo(() => {
         const sourceData = viewMode === 'registrations' ? registrations : cancellations;
         return sourceData.filter((item: any) => {
+            // 1. Payment Mode Filter (Only for active registrations)
+            if (viewMode === 'registrations') {
+                const reg = item as Registration;
+                const utr = reg.utr || reg.paymentDetails?.utrNumber || '';
+                const isCash = utr.toLowerCase().includes('cash');
+
+                if (paymentMode === 'cash' && !isCash) return false;
+                if (paymentMode === 'online' && isCash) return false;
+            }
+
             if (statusFilter !== 'all' && item.paymentStatus !== statusFilter) return false;
 
             if (whatsappFilter !== 'all') {
@@ -61,7 +72,7 @@ export const Registrations = () => {
 
             return matchesField || matchesMember;
         });
-    }, [viewMode, registrations, cancellations, searchQuery, statusFilter, whatsappFilter]);
+    }, [viewMode, registrations, cancellations, searchQuery, statusFilter, whatsappFilter, paymentMode]);
 
     // Columns Logic
     const baseRegColumns = useTableSchema(currentYatra, filteredData as Registration[]);
@@ -141,25 +152,51 @@ export const Registrations = () => {
             <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 bg-gray-900/40 p-4 rounded-xl border border-white/5">
 
                 {/* View Toggles */}
-                <div className="flex rounded-lg bg-black/20 p-1 border border-white/5">
-                    <button
-                        onClick={() => setViewMode('registrations')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'registrations'
-                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20'
-                            : 'text-gray-400 hover:text-white hover:bg-white/5'
-                            }`}
-                    >
-                        Active List
-                    </button>
-                    <button
-                        onClick={() => setViewMode('cancellations')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'cancellations'
-                            ? 'bg-red-600 text-white shadow-lg shadow-red-900/20'
-                            : 'text-gray-400 hover:text-white hover:bg-white/5'
-                            }`}
-                    >
-                        Cancellations
-                    </button>
+                <div className="flex gap-4">
+                    <div className="flex rounded-lg bg-black/20 p-1 border border-white/5 h-fit">
+                        <button
+                            onClick={() => setViewMode('registrations')}
+                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'registrations'
+                                ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                }`}
+                        >
+                            Active List
+                        </button>
+                        <button
+                            onClick={() => setViewMode('cancellations')}
+                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'cancellations'
+                                ? 'bg-red-600 text-white shadow-lg shadow-red-900/20'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                }`}
+                        >
+                            Cancellations
+                        </button>
+                    </div>
+
+                    {/* Payment Mode Toggles - Only show for Registrations */}
+                    {viewMode === 'registrations' && (
+                        <div className="flex rounded-lg bg-black/20 p-1 border border-white/5 h-fit">
+                            <button
+                                onClick={() => setPaymentMode('online')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${paymentMode === 'online'
+                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                Online
+                            </button>
+                            <button
+                                onClick={() => setPaymentMode('cash')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${paymentMode === 'cash'
+                                    ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                Cash
+                            </button>
+                        </div>
+                    )}
                 </div>
 
 
