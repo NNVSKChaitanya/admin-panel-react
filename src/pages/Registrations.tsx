@@ -11,6 +11,7 @@ import { DeleteRegistrationModal } from '../components/DeleteRegistrationModal';
 import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal';
 import { UndoCancellationModal } from '../components/UndoCancellationModal';
 import { EditCancellationModal } from '../components/EditCancellationModal';
+import { exportRegistrationsToExcel, exportCancellationsToExcel } from '../utils/excelExport';
 
 export const Registrations = () => {
     const { currentYatra, user } = useAppStore();
@@ -91,6 +92,15 @@ export const Registrations = () => {
             ];
         } else {
             cols = [...baseRegColumns];
+            // Inject 'Account' column before UTR (assuming UTR is last)
+            if (cols.length > 0) {
+                const lastCol = cols[cols.length - 1];
+                if (lastCol.key === 'utr') {
+                    cols.splice(cols.length - 1, 0, { key: 'account_source', label: 'Account', type: 'badge' });
+                } else {
+                    cols.push({ key: 'account_source', label: 'Account', type: 'badge' });
+                }
+            }
         }
 
         // Always append actions IF logged in
@@ -123,25 +133,20 @@ export const Registrations = () => {
     };
 
     const handleExport = (data: any[]) => {
-        const headers = ["Name", "Phone", "Status", "Amount"];
-        const csvContent = [headers.join(",")];
+        const yatraName = currentYatra?.name?.replace(/\s+/g, '_') || 'yatra';
+        const timestamp = new Date().toISOString().split('T')[0];
 
-        data.forEach((item: any) => {
-            const row = [
-                item.name,
-                item.phone,
-                viewMode === 'registrations' ? (item as Registration).paymentStatus : (item as Cancellation).refundStatus,
-                viewMode === 'registrations' ? (item as Registration).totalAmount : (item as Cancellation).refundAmount
-            ];
-            csvContent.push(row.map(cell => `"${cell || ''}"`).join(","));
-        });
-
-        const blob = new Blob([csvContent.join("\n")], { type: "text/csv" });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `yatra_${viewMode}_export.csv`;
-        a.click();
+        if (viewMode === 'registrations') {
+            exportRegistrationsToExcel(data as Registration[], {
+                filename: `${yatraName}_registrations_${timestamp}`,
+                sheetName: 'Registrations'
+            });
+        } else {
+            exportCancellationsToExcel(data as Cancellation[], {
+                filename: `${yatraName}_cancellations_${timestamp}`,
+                sheetName: 'Cancellations'
+            });
+        }
     };
 
 

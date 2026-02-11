@@ -24,6 +24,8 @@ export const Dashboard = () => {
     const stats = useMemo(() => {
         let totalAmount = 0;
         let onlineAmount = 0;
+        let onlineChaitanyaAmount = 0;
+        let onlineNarayanaAmount = 0;
         let cashAmount = 0;
         let totalTravellers = 0;
         let totalRecords = registrations.length;
@@ -55,6 +57,13 @@ export const Dashboard = () => {
                 cashAmount += revenue;
             } else {
                 onlineAmount += revenue;
+
+                const remarks = (reg.remarks || '').toLowerCase();
+                if (remarks.includes('chaitanya')) {
+                    onlineChaitanyaAmount += revenue;
+                } else if (remarks.includes('narayana')) {
+                    onlineNarayanaAmount += revenue;
+                }
             }
 
             if (reg.paymentStatus === 'pending_verification' || reg.paymentDetails?.paymentStatus === 'verification_pending') {
@@ -91,6 +100,8 @@ export const Dashboard = () => {
         return {
             totalAmount,
             onlineAmount,
+            onlineChaitanyaAmount,
+            onlineNarayanaAmount,
             cashAmount,
             totalTravellers,
             totalRecords,
@@ -119,7 +130,7 @@ export const Dashboard = () => {
             </div>
 
             {/* Top Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <StatsCard
                     title="Total Travellers"
                     value={stats.totalTravellers}
@@ -142,6 +153,20 @@ export const Dashboard = () => {
                     icon={CreditCard}
                     color="text-blue-400"
                     bg="bg-blue-500/10"
+                />
+                <StatsCard
+                    title="Chaitanya (Online)"
+                    value={`₹${stats.onlineChaitanyaAmount.toLocaleString()}`}
+                    icon={CreditCard}
+                    color="text-cyan-400"
+                    bg="bg-cyan-500/10"
+                />
+                <StatsCard
+                    title="Narayana (Online)"
+                    value={`₹${stats.onlineNarayanaAmount.toLocaleString()}`}
+                    icon={CreditCard}
+                    color="text-sky-400"
+                    bg="bg-sky-500/10"
                 />
                 <StatsCard
                     title="Cash Collections"

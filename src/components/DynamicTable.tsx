@@ -80,6 +80,25 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
             );
         }
 
+        if (col.key === 'account_source') {
+            const remarks = (row.remarks || '').toLowerCase();
+            if (remarks.includes('chaitanya')) {
+                return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                        Chaitanya
+                    </span>
+                );
+            }
+            if (remarks.includes('narayana')) {
+                return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                        Narayana
+                    </span>
+                );
+            }
+            return <span className="text-gray-600 font-mono text-xs">-</span>;
+        }
+
         return <span className="text-gray-300 font-medium">{value?.toString() || '-'}</span>;
     };
 
