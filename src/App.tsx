@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 // Lazy Load Pages
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const Registrations = lazy(() => import('./pages/Registrations').then(module => ({ default: module.Registrations })));
+const PaymentTracking = lazy(() => import('./pages/PaymentTracking').then(module => ({ default: module.PaymentTracking })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +44,14 @@ function App() {
               element={
                 <Suspense fallback={<LoadingSpinner />}>
                   <Registrations />
+                </Suspense>
+              }
+            />
+            <Route
+              path="payments"
+              element={
+                <Suspense fallback={<LoadingSpinner />}>
+                  <PaymentTracking />
                 </Suspense>
               }
             />

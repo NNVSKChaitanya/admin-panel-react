@@ -49,19 +49,53 @@ export const Dashboard = () => {
             totalAmount += revenue;
 
             // Online vs Cash Classification
-            // Check UTR for "cash" string (case-insensitive)
+            // Check UTR for "cash" string (case-insensitive) OR explicit assignment
             const utr = reg.utr || reg.paymentDetails?.utrNumber || '';
-            const isCash = utr.toLowerCase().includes('cash');
+            const isCash = utr.toLowerCase().includes('cash') || reg.paymentDetails?.assignedTo === 'cash';
 
             if (isCash) {
                 cashAmount += revenue;
             } else {
                 onlineAmount += revenue;
 
-                const remarks = (reg.remarks || '').toLowerCase();
-                if (remarks.includes('chaitanya')) {
+                let assignedTo = '';
+
+                // 1. Check direct assignment (New Logic)
+                if (reg.paymentDetails?.assignedTo) {
+                    assignedTo = reg.paymentDetails.assignedTo;
+                }
+                // 2. Check Installment assignments (if any)
+                else if (reg.paymentDetails?.installments?.length) {
+                    // Iterate and sum up assigned installments
+                    reg.paymentDetails.installments.forEach((inst, idx) => {
+                        const instAmount = inst.amount || 0;
+                        if (inst.assignedTo === 'chaitanya') {
+                            onlineChaitanyaAmount += instAmount;
+                        } else if (inst.assignedTo === 'narayana') {
+                            onlineNarayanaAmount += instAmount;
+                        } else {
+                            // Fallback to remarks ONLY for First Installment
+                            if (idx === 0) {
+                                const remarks = (reg.remarks || '').toLowerCase();
+                                if (remarks.includes('chaitanya')) onlineChaitanyaAmount += instAmount;
+                                else if (remarks.includes('narayana')) onlineNarayanaAmount += instAmount;
+                            }
+                            // Subsequent installments (idx > 0) are unassigned by default -> do not add to chaitanya/narayana
+                        }
+                    });
+
+                    assignedTo = 'processed_via_installments';
+                }
+                else {
+                    // Fallback to Remarks (Old Logic for Single Payments)
+                    const remarks = (reg.remarks || '').toLowerCase();
+                    if (remarks.includes('chaitanya')) assignedTo = 'chaitanya';
+                    else if (remarks.includes('narayana')) assignedTo = 'narayana';
+                }
+
+                if (assignedTo === 'chaitanya') {
                     onlineChaitanyaAmount += revenue;
-                } else if (remarks.includes('narayana')) {
+                } else if (assignedTo === 'narayana') {
                     onlineNarayanaAmount += revenue;
                 }
             }
