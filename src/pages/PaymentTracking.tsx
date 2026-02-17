@@ -234,7 +234,7 @@ export const PaymentTracking = () => {
 
                     installments[item.index] = {
                         ...installments[item.index],
-                        status: statusValue
+                        status: statusValue as any
                     };
                     updates['paymentDetails.installments'] = installments;
                 }

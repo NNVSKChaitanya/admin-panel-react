@@ -50,7 +50,7 @@ export interface Installment {
     name: string;
     amount: number;
     dueDate: string;
-    status: 'pending' | 'paid' | 'verification_pending';
+    status: 'pending' | 'paid' | 'verification_pending' | 'rejected';
     assignedTo?: 'chaitanya' | 'narayana' | 'cash' | null;
 }
 
@@ -60,7 +60,7 @@ export interface PaymentDetails {
     totalAmount: number;
     utrNumber?: string;
     paymentProofUrl?: string;
-    paymentStatus: 'verified' | 'pending' | 'verification_pending' | 'partial_payment' | 'no_payment';
+    paymentStatus: 'verified' | 'pending' | 'verification_pending' | 'partial_payment' | 'no_payment' | 'rejected';
     installments?: Installment[];
     assignedTo?: 'chaitanya' | 'narayana' | 'cash' | null;
 }
