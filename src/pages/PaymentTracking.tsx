@@ -54,7 +54,7 @@ export const PaymentTracking = () => {
 
                     if (inst.assignedTo) {
                         assigned = inst.assignedTo;
-                    } else if (isCashUTR) {
+                    } else if (isCashUTR && idx === 0) {
                         assigned = 'cash';
                     } else if (idx === 0) {
                         // ONLY First Installment falls back to remarks
@@ -189,6 +189,12 @@ export const PaymentTracking = () => {
                         status: targetColumn !== 'unassigned' ? 'paid' : installments[draggedItem.index].status
                     };
                     updates['paymentDetails.installments'] = installments;
+
+                    // Recalculate amountPaid
+                    const newAmountPaid = installments.reduce((acc, inst) => {
+                        return (inst.status === 'paid' || (inst.status as string) === 'verified') ? acc + (inst.amount || 0) : acc;
+                    }, 0);
+                    updates['paymentDetails.amountPaid'] = newAmountPaid;
                 }
             } else {
                 // Updating main record
@@ -237,6 +243,12 @@ export const PaymentTracking = () => {
                         status: statusValue as any
                     };
                     updates['paymentDetails.installments'] = installments;
+
+                    // Recalculate amountPaid
+                    const newAmountPaid = installments.reduce((acc, inst) => {
+                        return (inst.status === 'paid' || (inst.status as string) === 'verified') ? acc + (inst.amount || 0) : acc;
+                    }, 0);
+                    updates['paymentDetails.amountPaid'] = newAmountPaid;
                 }
             } else {
                 updates['paymentStatus'] = newStatus;
@@ -248,6 +260,46 @@ export const PaymentTracking = () => {
         } catch (error) {
             console.error("Failed to update status:", error);
             alert("Failed to update status.");
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const handleSyncAmounts = async () => {
+        if (!currentYatra) return;
+        if (!confirm("This will scan all registrations and recalculate the 'amountPaid' based on verified installments. Are you sure you want to proceed?")) return;
+
+        setIsUpdating(true);
+        try {
+            const { db } = currentYatra.isMaster
+                ? getMasterApp()
+                : getDynamicApp(currentYatra.id, currentYatra.config);
+
+            let syncCount = 0;
+
+            for (const reg of registrations) {
+                if (reg.paymentDetails?.installments?.length) {
+                    const calculatedAmount = reg.paymentDetails.installments.reduce((acc, inst) => {
+                        return (inst.status === 'paid' || (inst.status as string) === 'verified') ? acc + (inst.amount || 0) : acc;
+                    }, 0);
+
+                    const currentAmount = reg.paymentDetails.amountPaid || 0;
+
+                    if (calculatedAmount !== currentAmount) {
+                        const regRef = doc(db, 'registrations', reg.id);
+                        await updateDoc(regRef, {
+                            'paymentDetails.amountPaid': calculatedAmount
+                        });
+                        syncCount++;
+                        console.log(`Synced Reg: ${reg.name}. Old: ${currentAmount}, New: ${calculatedAmount}`);
+                    }
+                }
+            }
+
+            alert(`Sync complete! ${syncCount} records were updated.`);
+        } catch (error) {
+            console.error("Failed to sync amounts:", error);
+            alert("An error occurred while syncing amounts. Check console for details.");
         } finally {
             setIsUpdating(false);
         }
@@ -268,7 +320,16 @@ export const PaymentTracking = () => {
                     <h1 className="text-2xl font-bold text-white">Payment Tracking</h1>
                     <p className="text-gray-400 text-sm">Drag payments to assign them to accounts.</p>
                 </div>
-                {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={handleSyncAmounts}
+                        disabled={isUpdating}
+                        className="text-xs bg-white/5 hover:bg-white/10 text-gray-300 font-mono px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                    >
+                        Sync Amounts Fix
+                    </button>
+                    {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                </div>
             </div>
 
             {/* Alerts Carousel */}
