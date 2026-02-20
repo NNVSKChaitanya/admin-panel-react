@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-react';
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const Registrations = lazy(() => import('./pages/Registrations').then(module => ({ default: module.Registrations })));
 const PaymentTracking = lazy(() => import('./pages/PaymentTracking').then(module => ({ default: module.PaymentTracking })));
+const RoomAllotment = lazy(() => import('./pages/RoomAllotment').then(module => ({ default: module.RoomAllotment })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,14 @@ function App() {
               element={
                 <Suspense fallback={<LoadingSpinner />}>
                   <PaymentTracking />
+                </Suspense>
+              }
+            />
+            <Route
+              path="rooms"
+              element={
+                <Suspense fallback={<LoadingSpinner />}>
+                  <RoomAllotment />
                 </Suspense>
               }
             />

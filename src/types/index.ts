@@ -5,6 +5,7 @@ export interface YatraConfig {
     storageBucket: string;
     messagingSenderId: string;
     appId: string;
+    twoSharingAmount?: number;
 }
 
 export interface YatraDefinition {
@@ -42,6 +43,7 @@ export interface Member {
     packageName?: string;
     packagePrice?: number;
     roomNumber?: string;
+    isTwoSharing?: boolean;
     // Any other fields
     [key: string]: any;
 }

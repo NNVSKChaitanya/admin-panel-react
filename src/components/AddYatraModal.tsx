@@ -18,6 +18,7 @@ export const AddYatraModal = ({ isOpen, onClose }: Props) => {
     const [name, setName] = useState('');
     const [bgImage, setBgImage] = useState('');
     const [configJson, setConfigJson] = useState('');
+    const [twoSharingAmount, setTwoSharingAmount] = useState<number | ''>('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Policy State
@@ -68,6 +69,10 @@ export const AddYatraModal = ({ isOpen, onClose }: Props) => {
                 return;
             }
 
+            if (twoSharingAmount !== '') {
+                config.twoSharingAmount = Number(twoSharingAmount);
+            }
+
             const { db } = getMasterApp();
             await addDoc(collection(db, 'yatra_dashboards'), {
                 name,
@@ -81,6 +86,7 @@ export const AddYatraModal = ({ isOpen, onClose }: Props) => {
             setName('');
             setBgImage('');
             setConfigJson('');
+            setTwoSharingAmount('');
             setPolicy([{ date: '2025-12-31', refund: 100 }]);
 
             onClose();
@@ -145,6 +151,21 @@ export const AddYatraModal = ({ isOpen, onClose }: Props) => {
                                 className="input-glass w-full"
                                 placeholder="https://..."
                             />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Database className="w-3.5 h-3.5" /> 2 Sharing Upgrade Amount (per person)
+                            </label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+                                <input
+                                    type="number"
+                                    value={twoSharingAmount}
+                                    onChange={(e) => setTwoSharingAmount(e.target.value ? Number(e.target.value) : '')}
+                                    className="input-glass w-full pl-8"
+                                    placeholder="e.g. 5000"
+                                />
+                            </div>
                         </div>
                     </div>
 

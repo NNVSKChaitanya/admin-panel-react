@@ -16,7 +16,7 @@ import { exportRegistrationsToExcel, exportCancellationsToExcel } from '../utils
 export const Registrations = () => {
     const { currentYatra, user } = useAppStore();
     const [viewMode, setViewMode] = useState<'registrations' | 'cancellations'>('registrations');
-    const [paymentMode, setPaymentMode] = useState<'online' | 'cash'>('online');
+    const [paymentMode, setPaymentMode] = useState<'all' | 'online' | 'cash'>('all');
     const { data: registrations = [], isLoading: isLoadingRegs } = useRegistrations();
     const { data: cancellations = [], isLoading: isLoadingCancels } = useCancellations();
 
@@ -43,7 +43,7 @@ export const Registrations = () => {
         const sourceData = viewMode === 'registrations' ? registrations : cancellations;
         return sourceData.filter((item: any) => {
             // 1. Payment Mode Filter (Only for active registrations)
-            if (viewMode === 'registrations') {
+            if (viewMode === 'registrations' && paymentMode !== 'all') {
                 const reg = item as Registration;
                 const utr = reg.utr || reg.paymentDetails?.utrNumber || '';
                 const isCash = utr.toLowerCase().includes('cash');
@@ -182,6 +182,15 @@ export const Registrations = () => {
                     {/* Payment Mode Toggles - Only show for Registrations */}
                     {viewMode === 'registrations' && (
                         <div className="flex rounded-lg bg-black/20 p-1 border border-white/5 h-fit">
+                            <button
+                                onClick={() => setPaymentMode('all')}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${paymentMode === 'all'
+                                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                All
+                            </button>
                             <button
                                 onClick={() => setPaymentMode('online')}
                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${paymentMode === 'online'

@@ -18,12 +18,14 @@ export const EditYatraSettingsModal = ({ isOpen, onClose }: Props) => {
     // Form State
     const [name, setName] = useState('');
     const [bgImage, setBgImage] = useState('');
+    const [twoSharingAmount, setTwoSharingAmount] = useState<number | ''>('');
     const [policy, setPolicy] = useState<RefundPolicyRule[]>([]);
 
     useEffect(() => {
         if (currentYatra) {
             setName(currentYatra.name || '');
             setBgImage(currentYatra.bgImage || '');
+            setTwoSharingAmount(currentYatra.config?.twoSharingAmount ?? '');
             // Sort policy by date
             const sortedPolicy = [...(currentYatra.policy || [])].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             setPolicy(sortedPolicy);
@@ -52,6 +54,14 @@ export const EditYatraSettingsModal = ({ isOpen, onClose }: Props) => {
             // Sort policy before saving
             const sortedPolicy = [...policy].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+            // Build updated config
+            const updatedConfig = { ...(currentYatra.config || {}) } as any;
+            if (twoSharingAmount !== '') {
+                updatedConfig.twoSharingAmount = Number(twoSharingAmount);
+            } else {
+                delete updatedConfig.twoSharingAmount;
+            }
+
             // Update in Firestore
             const { db } = getMasterApp(); // Config always stored in Master
             const yatraRef = doc(db, 'yatra_dashboards', currentYatra.id);
@@ -59,6 +69,7 @@ export const EditYatraSettingsModal = ({ isOpen, onClose }: Props) => {
             await updateDoc(yatraRef, {
                 name,
                 bgImage,
+                config: updatedConfig,
                 policy: sortedPolicy
             });
 
@@ -67,6 +78,7 @@ export const EditYatraSettingsModal = ({ isOpen, onClose }: Props) => {
                 ...currentYatra,
                 name,
                 bgImage,
+                config: updatedConfig,
                 policy: sortedPolicy
             } as any);
 
@@ -136,6 +148,21 @@ export const EditYatraSettingsModal = ({ isOpen, onClose }: Props) => {
                                         <div className="absolute inset-0 flex items-center justify-center text-xs text-white bg-black/40">Preview</div>
                                     </div>
                                 )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1.5 flex items-center gap-2">
+                                    <Settings className="w-4 h-4" /> 2 Sharing Upgrade Amount (per person)
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₹</span>
+                                    <input
+                                        type="number"
+                                        value={twoSharingAmount}
+                                        onChange={(e) => setTwoSharingAmount(e.target.value ? Number(e.target.value) : '')}
+                                        placeholder="e.g. 5000"
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500/50 outline-none"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>

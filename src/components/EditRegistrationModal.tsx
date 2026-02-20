@@ -34,16 +34,35 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                 joinedWhatsapp: data.joinedWhatsapp,
                 utr: data.utr,
                 familyId: data.familyId || data.id,
-                // Handle nested payment details flattening for edit if needed
-                // If the data uses paymentDetails, we might want to edit that object.
-                // For simplicity in this v1, we focus on root fields which 'Puri' uses.
-                // If 'Hampi' schema is used, we might need deeper logic. 
-                // Let's assume root fields are primary or mapped.
             });
             setMembers(data.members ? [...data.members] : []);
             setInstallments(data.paymentDetails?.installments ? [...data.paymentDetails.installments] : []);
         }
     }, [data, isOpen]);
+
+    // Auto-update 2 Sharing Installment
+    useEffect(() => {
+        if (!isOpen || !currentYatra) return;
+        const twoSharingCount = members.filter(m => m.isTwoSharing).length;
+        const feePerPerson = currentYatra.config?.twoSharingAmount || 0;
+        const totalFee = twoSharingCount * feePerPerson;
+
+        setInstallments(prev => {
+            const hasPremium = prev.some(i => i.name === '2 Sharing Premium');
+            if (totalFee > 0) {
+                if (hasPremium) {
+                    return prev.map(i => i.name === '2 Sharing Premium' && i.amount !== totalFee ? { ...i, amount: totalFee } : i);
+                } else {
+                    return [...prev, { name: '2 Sharing Premium', amount: totalFee, status: 'pending', dueDate: new Date().toISOString().split('T')[0] }];
+                }
+            } else {
+                if (hasPremium) {
+                    return prev.filter(i => i.name !== '2 Sharing Premium');
+                }
+                return prev;
+            }
+        });
+    }, [members, currentYatra, isOpen]);
 
     if (!isOpen || !data) return null;
 
@@ -93,12 +112,18 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
             // Let's preserve member count based calculation if it was there, but maybe safer to NOT touch amount automatically unless we know price.
 
             // Sync Payment Details if they exist (Dynamic / Hampi Style)
-            if (data.paymentDetails) {
-                updatedData.paymentDetails = {
+            if (data.paymentDetails || installments.length > 0) {
+                updatedData.paymentDetails = data.paymentDetails ? {
                     ...data.paymentDetails,
                     paymentStatus: formData.paymentStatus, // Sync root status to nested
                     utrNumber: formData.utr, // Sync root UTR to nested
                     installments: installments // Update installments
+                } : {
+                    paymentType: installments.length > 0 ? 'installment' : 'full',
+                    paymentStatus: formData.paymentStatus || 'pending',
+                    amountPaid: 0,
+                    totalAmount: data.totalAmount || 0,
+                    installments: installments
                 };
 
                 // Recalculate amounts if using installments
@@ -108,7 +133,8 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                         .reduce((sum, i) => sum + Number(i.amount), 0);
 
                     updatedData.paymentDetails.amountPaid = totalPaid;
-                    // We don't auto-update totalAmount, assuming it's fixed per package but could be editable field in future
+                    updatedData.paymentDetails.totalAmount = (data.totalAmount || 0) + installments.reduce((sum, i) => i.name === '2 Sharing Premium' ? sum + Number(i.amount) : sum, 0);
+                    // We don't auto-update root totalAmount to preserve original core package price unless specified.
                 }
             }
 
@@ -335,9 +361,22 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                         <div className="space-y-4">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Travellers List</h3>
-                                <button onClick={addMember} className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
-                                    <Plus className="w-3 h-3" /> Add New
-                                </button>
+                                <div className="flex gap-2">
+                                    {members.length === 2 && (
+                                        <button
+                                            onClick={() => {
+                                                const allTwoSharing = members.every(m => m.isTwoSharing);
+                                                setMembers(members.map(m => ({ ...m, isTwoSharing: !allTwoSharing })));
+                                            }}
+                                            className="text-xs bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white px-3 py-1.5 rounded-lg border border-indigo-500/30 transition-colors"
+                                        >
+                                            {members.every(m => m.isTwoSharing) ? 'Remove 2-Sharing' : 'Make 2-Sharing'}
+                                        </button>
+                                    )}
+                                    <button onClick={addMember} className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
+                                        <Plus className="w-3 h-3" /> Add New
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="space-y-3">
@@ -408,6 +447,19 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                                                     </div>
                                                 </>
                                             )}
+
+                                            {/* 2 Sharing Toggle */}
+                                            <div className="md:col-span-12 mt-2 pt-2 border-t border-white/5 flex items-center justify-between">
+                                                <label className="text-xs font-medium text-indigo-300 flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!member.isTwoSharing}
+                                                        onChange={e => handleMemberChange(idx, 'isTwoSharing', e.target.checked)}
+                                                        className="w-4 h-4 rounded border-white/20 bg-black/20 text-indigo-500 focus:ring-indigo-500/50"
+                                                    />
+                                                    Opt-in for 2 Sharing Premium
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
