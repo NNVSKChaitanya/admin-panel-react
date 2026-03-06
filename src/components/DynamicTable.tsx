@@ -81,18 +81,46 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
         }
 
         if (col.key === 'account_source') {
-            const remarks = (row.remarks || '').toLowerCase();
-            if (remarks.includes('chaitanya')) {
+            // Determine assigned account: check paymentDetails.assignedTo first,
+            // then installment assignments, then fallback to remarks
+            let assigned: string | null = null;
+
+            // 1. Direct assignment from PaymentTracking (full payment)
+            if (row.paymentDetails?.assignedTo) {
+                assigned = row.paymentDetails.assignedTo;
+            }
+            // 2. Check installment-level assignments (use first assigned installment)
+            else if (row.paymentDetails?.installments?.length) {
+                const firstAssigned = row.paymentDetails.installments.find((i: any) => i.assignedTo);
+                if (firstAssigned?.assignedTo) {
+                    assigned = firstAssigned.assignedTo;
+                }
+            }
+            // 3. Fallback to remarks
+            if (!assigned) {
+                const remarks = (row.remarks || '').toLowerCase();
+                if (remarks.includes('chaitanya')) assigned = 'chaitanya';
+                else if (remarks.includes('narayana')) assigned = 'narayana';
+            }
+
+            if (assigned === 'chaitanya') {
                 return (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                         Chaitanya
                     </span>
                 );
             }
-            if (remarks.includes('narayana')) {
+            if (assigned === 'narayana') {
                 return (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">
                         Narayana
+                    </span>
+                );
+            }
+            if (assigned === 'cash') {
+                return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        Cash
                     </span>
                 );
             }

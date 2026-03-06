@@ -23,7 +23,10 @@ export const useTableSchema = (yatra: YatraDefinition | null, data: Registration
         }
 
         // Detect Payment Type
-        const hasComplexPayment = data.some(r => r.paymentDetails?.paymentType === 'installment');
+        const hasComplexPayment = data.some(r =>
+            r.paymentDetails?.paymentType === 'installment' ||
+            (r.paymentDetails?.installments && r.paymentDetails.installments.length > 0)
+        );
         if (hasComplexPayment) {
             columns.push({ key: 'paymentDetails.installments', label: 'Installments', type: 'progress' });
             columns.push({ key: 'paymentDetails.totalAmount', label: 'Total', type: 'currency' });

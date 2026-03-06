@@ -41,6 +41,7 @@ const REGISTRATION_HEADERS = [
     'Address',
     // Member info (one per row)
     'Member Name',
+    'Member Phone',
     'Age',
     'Gender',
     'Package',
@@ -133,6 +134,7 @@ export const exportRegistrationsToExcel = (
                     idx === 0 ? commonData.address : '',
                     // Member data
                     member.name || '',
+                    member.phone || '',
                     member.age || '',
                     member.gender || '',
                     member.packageName || '',
@@ -159,7 +161,7 @@ export const exportRegistrationsToExcel = (
                 commonData.email,
                 commonData.whatsapp,
                 commonData.address,
-                '', '', '', '', '', '', // Empty member columns
+                '', '', '', '', '', '', '', // Empty member columns (includes phone)
                 commonData.totalAmount,
                 commonData.amountPaid,
                 commonData.paymentType,
@@ -174,8 +176,8 @@ export const exportRegistrationsToExcel = (
 
         // Add merge ranges for multi-member registrations
         if (memberCount > 1) {
-            // Columns to merge: 0-5 (registration info) and 12-19 (payment info)
-            const mergeColumns = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19];
+            // Columns to merge: 0-5 (registration info) and 13-20 (payment info)
+            const mergeColumns = [0, 1, 2, 3, 4, 5, 13, 14, 15, 16, 17, 18, 19, 20];
             mergeColumns.forEach(col => {
                 merges.push({
                     s: { r: startRow, c: col },
@@ -202,6 +204,7 @@ export const exportRegistrationsToExcel = (
         { wch: 15 }, // WhatsApp
         { wch: 30 }, // Address
         { wch: 20 }, // Member Name
+        { wch: 15 }, // Member Phone
         { wch: 6 },  // Age
         { wch: 8 },  // Gender
         { wch: 15 }, // Package

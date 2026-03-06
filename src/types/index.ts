@@ -37,6 +37,7 @@ export interface GridColumn {
 
 export interface Member {
     name: string;
+    phone?: string;
     age: string | number;
     gender: string;
     // Dynamic fields

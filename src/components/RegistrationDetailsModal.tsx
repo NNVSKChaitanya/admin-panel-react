@@ -213,6 +213,7 @@ export const RegistrationDetailsModal = ({ isOpen, onClose, data }: Props) => {
                                 <thead className="text-xs text-gray-500 uppercase bg-black/20">
                                     <tr>
                                         <th className="px-6 py-3 font-medium">Name</th>
+                                        <th className="px-6 py-3 font-medium">Phone</th>
                                         <th className="px-6 py-3 font-medium">Age/Gender</th>
                                         <th className="px-6 py-3 font-medium">Package</th>
                                         {data.members?.[0]?.roomNumber && <th className="px-6 py-3 font-medium">Room Assigned</th>}
@@ -222,6 +223,7 @@ export const RegistrationDetailsModal = ({ isOpen, onClose, data }: Props) => {
                                     {data.members?.map((member, idx) => (
                                         <tr key={idx} className="hover:bg-white/5 transition-colors">
                                             <td className="px-6 py-4 font-medium text-white">{member.name}</td>
+                                            <td className="px-6 py-4 text-gray-300 font-mono text-sm">{member.phone || '-'}</td>
                                             <td className="px-6 py-4 text-gray-300">{member.age} / {member.gender}</td>
                                             <td className="px-6 py-4">
                                                 <span className="px-2 py-1 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 text-xs">

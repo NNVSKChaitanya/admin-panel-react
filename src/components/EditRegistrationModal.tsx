@@ -400,6 +400,16 @@ export const EditRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Prop
                                                     onChange={e => handleMemberChange(idx, 'name', e.target.value)}
                                                 />
                                             </div>
+                                            <div className="md:col-span-3">
+                                                <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Phone</label>
+                                                <input
+                                                    type="tel"
+                                                    className="w-full bg-black/20 border border-white/10 rounded px-2 py-1.5 text-sm focus:border-purple-500/50 outline-none text-white placeholder-gray-600"
+                                                    placeholder="Phone Number"
+                                                    value={member.phone || ''}
+                                                    onChange={e => handleMemberChange(idx, 'phone', e.target.value)}
+                                                />
+                                            </div>
                                             <div className="md:col-span-2">
                                                 <label className="text-[10px] text-gray-500 uppercase tracking-wider mb-1 block">Age</label>
                                                 <input
