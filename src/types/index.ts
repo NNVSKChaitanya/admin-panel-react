@@ -66,6 +66,7 @@ export interface PaymentDetails {
     paymentStatus: 'verified' | 'pending' | 'verification_pending' | 'partial_payment' | 'no_payment' | 'rejected';
     installments?: Installment[];
     assignedTo?: 'chaitanya' | 'narayana' | 'cash' | null;
+    twoSharingAssignedTo?: 'chaitanya' | 'narayana' | 'cash' | null;
 }
 
 export interface Registration {
@@ -94,6 +95,10 @@ export interface Registration {
     // Metadata
     familyId?: string;
     screenshotUrl?: string;
+
+    // Merge tracking
+    mergedFrom?: string[];
+    mergedInto?: string;
 }
 
 export interface Cancellation {

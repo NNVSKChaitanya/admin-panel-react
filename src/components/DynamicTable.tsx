@@ -1,6 +1,6 @@
 import type { GridColumn, Registration } from '../types';
 import { cn } from '../lib/utils';
-import { BadgeCheck, Clock, AlertCircle, RefreshCcw, Eye, Edit, Ban, Trash2, RotateCcw } from 'lucide-react';
+import { BadgeCheck, Clock, AlertCircle, RefreshCcw, Eye, Edit, Ban, Trash2, RotateCcw, GitMerge } from 'lucide-react';
 
 interface Props {
     columns: GridColumn[];
@@ -180,6 +180,9 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
                                                     </button>
                                                     <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-gray-400 hover:bg-white/10 hover:text-white transition-colors" title="Edit">
                                                         <Edit className="w-4 h-4" />
+                                                    </button>
+                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('merge', row); }} className="p-1.5 rounded-md text-indigo-400 hover:bg-indigo-500/10 transition-colors" title="Merge with another registration">
+                                                        <GitMerge className="w-4 h-4" />
                                                     </button>
                                                     <button type="button" onClick={(e) => { e.stopPropagation(); onAction('cancel', row); }} className="p-1.5 rounded-md text-orange-400 hover:bg-orange-500/10 transition-colors" title="Cancel/Refund">
                                                         <Ban className="w-4 h-4" />

@@ -12,7 +12,7 @@ import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal
 interface PaymentItem {
     id: string; // Unique ID for Drag and Drop
     registrationId: string;
-    type: 'full' | 'installment';
+    type: 'full' | 'installment' | 'twoSharing';
     index?: number; // Installment index
     name: string; // Traveller Name
     amount: number;
@@ -41,6 +41,7 @@ export const PaymentTracking = () => {
     // Normalize Data into Draggable Items
     const items = useMemo(() => {
         const list: PaymentItem[] = [];
+        const twoSharingAmount = currentYatra?.config?.twoSharingAmount || 0;
 
         registrations.forEach(reg => {
             // Logic for Hampi-style (Installments)
@@ -109,9 +110,37 @@ export const PaymentTracking = () => {
                     originalData: reg
                 });
             }
+
+            // 2-Sharing Premium: create a separate card if members have isTwoSharing
+            // Works for both: Puri-style (no installments) and Hampi-style (with installments)
+            const hasTwoSharingMembers = reg.members?.some(m => m.isTwoSharing);
+            const existingTwoSharingInstallment = reg.paymentDetails?.installments?.find(i => i.name === '2 Sharing Premium');
+
+            if (hasTwoSharingMembers && !existingTwoSharingInstallment) {
+                // No installment entry for 2-sharing — create a standalone card
+                const twoSharingCount = reg.members!.filter(m => m.isTwoSharing).length;
+                const perPersonFee = twoSharingAmount || 0;
+                const totalTwoSharingFee = twoSharingCount * perPersonFee;
+
+                let twoSharingAssigned: 'chaitanya' | 'narayana' | 'cash' | 'unassigned' = 'unassigned';
+                if (reg.paymentDetails?.twoSharingAssignedTo) {
+                    twoSharingAssigned = reg.paymentDetails.twoSharingAssignedTo;
+                }
+
+                list.push({
+                    id: `${reg.id}_2sharing`,
+                    registrationId: reg.id,
+                    type: 'twoSharing',
+                    name: `${reg.name} (2-Sharing)`,
+                    amount: totalTwoSharingFee,
+                    status: twoSharingAssigned !== 'unassigned' ? 'paid' : 'pending',
+                    assignedTo: twoSharingAssigned,
+                    originalData: reg
+                });
+            }
         });
         return list;
-    }, [registrations]);
+    }, [registrations, currentYatra]);
 
     // --- Alerts Logic ---
     const alertItems = useMemo(() => {
@@ -125,11 +154,18 @@ export const PaymentTracking = () => {
             if (item.type === 'installment' && item.installmentData?.dueDate) {
                 const dueDate = new Date(item.installmentData.dueDate);
                 const today = new Date();
-                // Reset time for accurate date comparison
                 today.setHours(0, 0, 0, 0);
+                if ((item.status !== 'verified' && item.status !== 'paid') && dueDate < today) return true;
+            }
 
-                // If not paid/verified AND due date is passed
-                return (item.status !== 'verified' && item.status !== 'paid') && dueDate < today;
+            // 3. Show unassigned 2-Sharing items (both standalone and installment-based)
+            if (item.type === 'twoSharing') {
+                return item.assignedTo === 'unassigned';
+            }
+
+            // 4. Show unassigned '2 Sharing Premium' installments
+            if (item.type === 'installment' && item.installmentData?.name === '2 Sharing Premium' && item.assignedTo === 'unassigned') {
+                return true;
             }
 
             return false;
@@ -177,15 +213,16 @@ export const PaymentTracking = () => {
             // Prepare Update Data
             const updates: any = {};
 
-            if (draggedItem.type === 'installment' && typeof draggedItem.index === 'number') {
+            if (draggedItem.type === 'twoSharing') {
+                // Updating 2-sharing assignment
+                updates['paymentDetails.twoSharingAssignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
+            } else if (draggedItem.type === 'installment' && typeof draggedItem.index === 'number') {
                 // Updating specific installment
                 const installments = [...(draggedItem.originalData.paymentDetails?.installments || [])];
                 if (installments[draggedItem.index]) {
                     installments[draggedItem.index] = {
                         ...installments[draggedItem.index],
                         assignedTo: targetColumn === 'unassigned' ? null : targetColumn,
-                        // If assigning to person/cash -> mark as paid/verified. If unassigning -> keep current status or move to pending? 
-                        // User likely wants it verified if assigned.
                         status: targetColumn !== 'unassigned' ? 'paid' : installments[draggedItem.index].status
                     };
                     updates['paymentDetails.installments'] = installments;
@@ -197,7 +234,7 @@ export const PaymentTracking = () => {
                     updates['paymentDetails.amountPaid'] = newAmountPaid;
                 }
             } else {
-                // Updating main record
+                // Updating main record (full payment)
                 updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
                 if (targetColumn !== 'unassigned') {
                     updates['paymentStatus'] = 'verified';
@@ -300,7 +337,7 @@ export const PaymentTracking = () => {
                                     <div>
                                         <p className="font-bold text-white text-sm truncate max-w-[150px]">{item.name}</p>
                                         <p className="text-xs text-yellow-200/70">
-                                            {item.type === 'full' ? 'Full Payment' : `Installment ${item.index! + 1}`}
+                                            {item.type === 'full' ? 'Full Payment' : item.type === 'twoSharing' ? '2-Sharing Premium' : item.installmentData?.name === '2 Sharing Premium' ? '2-Sharing Premium' : `Installment ${item.index! + 1}`}
                                         </p>
                                     </div>
                                     <span className="text-xs font-mono font-bold text-yellow-400">₹{item.amount.toLocaleString()}</span>
@@ -431,11 +468,17 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
             '2nd Installment': [],
             '3rd Installment': [],
             '4th Installment': [],
+            '2 Sharing': [],
             'Other': []
         };
 
         items.forEach((item: any) => {
-            if (item.type === 'full') {
+            if (item.type === 'twoSharing') {
+                groups['2 Sharing'].push(item);
+            } else if (item.type === 'installment' && item.installmentData?.name === '2 Sharing Premium') {
+                // Installment-based 2-sharing goes into the 2 Sharing group
+                groups['2 Sharing'].push(item);
+            } else if (item.type === 'full') {
                 groups['Full Payment'].push(item);
             } else if (item.type === 'installment' && typeof item.index === 'number') {
                 const idx = item.index;

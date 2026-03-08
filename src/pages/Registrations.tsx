@@ -11,6 +11,7 @@ import { DeleteRegistrationModal } from '../components/DeleteRegistrationModal';
 import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal';
 import { UndoCancellationModal } from '../components/UndoCancellationModal';
 import { EditCancellationModal } from '../components/EditCancellationModal';
+import { MergeRegistrationsModal } from '../components/MergeRegistrationsModal';
 import { exportRegistrationsToExcel, exportCancellationsToExcel } from '../utils/excelExport';
 
 export const Registrations = () => {
@@ -37,6 +38,7 @@ export const Registrations = () => {
     const [selectedCancellation, setSelectedCancellation] = useState<Cancellation | null>(null);
     const [isUndoModalOpen, setIsUndoModalOpen] = useState(false);
     const [isEditCancellationModalOpen, setIsEditCancellationModalOpen] = useState(false);
+    const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
     // Filter Logic
     const filteredData = useMemo(() => {
@@ -119,6 +121,7 @@ export const Registrations = () => {
             switch (action) {
                 case 'view': setSelectedReg(reg); setIsDetailsModalOpen(true); break;
                 case 'edit': setSelectedReg(reg); setIsEditModalOpen(true); break;
+                case 'merge': setSelectedReg(reg); setIsMergeModalOpen(true); break;
                 case 'cancel': setSelectedReg(reg); setIsCancelModalOpen(true); break;
                 case 'delete': setSelectedDelete(reg); setIsDeleteModalOpen(true); break;
             }
@@ -323,6 +326,14 @@ export const Registrations = () => {
                 isOpen={isEditCancellationModalOpen}
                 onClose={() => setIsEditCancellationModalOpen(false)}
                 cancellation={selectedCancellation}
+            />
+
+            <MergeRegistrationsModal
+                isOpen={isMergeModalOpen}
+                onClose={() => setIsMergeModalOpen(false)}
+                primaryRegistration={selectedReg}
+                allRegistrations={registrations}
+                onSuccess={() => setSelectedReg(null)}
             />
         </div>
     );
