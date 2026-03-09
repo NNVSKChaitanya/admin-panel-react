@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRegistrations } from '../hooks/useRegistrations';
 import { useAppStore } from '../store/useAppStore';
 import type { Registration, Member } from '../types';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
-import { Loader2, Users, BedDouble, AlertCircle, X } from 'lucide-react';
+import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
+import { Loader2, Users, BedDouble, AlertCircle, X, Shield } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 // --- Types for the Board ---
@@ -13,6 +14,7 @@ interface MemberItem extends Member {
     memberIndex: number;
     primaryContactName: string;
     familyId: string;
+    isManagement?: boolean;
 }
 
 const CheckIcon = ({ small = false }: { small?: boolean }) => (
@@ -56,7 +58,30 @@ const getMemberStyles = (gender: string, age: string | number) => {
 export const RoomAllotment = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
+    const { members: globalMgmtMembers, isLoading: isLoadingMgmt } = useManagementTeam();
+    const { selectedIds: mgmtSelectedIds, isLoading: isLoadingMgmtSel } = useYatraManagementSelection();
     const [isUpdating, setIsUpdating] = useState(false);
+
+    // Management room assignments (stored separately)
+    const [mgmtRoomAssignments, setMgmtRoomAssignments] = useState<Record<string, string>>({});
+
+    // Effect to load management room assignments
+    useEffect(() => {
+        if (!currentYatra) return;
+        const { db } = currentYatra.isMaster
+            ? getMasterApp()
+            : getDynamicApp(currentYatra.id, currentYatra.config);
+
+        const docRef = doc(db, 'config', 'management_room_assignments');
+        const unsub = onSnapshot(docRef, (snap) => {
+            if (snap.exists()) {
+                setMgmtRoomAssignments(snap.data().assignments || {});
+            } else {
+                setMgmtRoomAssignments({});
+            }
+        });
+        return () => unsub();
+    }, [currentYatra]);
 
     // Selection state for multi-select
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
@@ -78,8 +103,25 @@ export const RoomAllotment = () => {
                 });
             }
         });
+
+        // Inject selected management members
+        const selectedMgmt = globalMgmtMembers.filter(m => mgmtSelectedIds.includes(m.id));
+        selectedMgmt.forEach((m, idx) => {
+            list.push({
+                name: m.name,
+                age: m.age,
+                gender: m.gender,
+                registrationId: `MGMT_${m.id}`,
+                memberIndex: 0,
+                primaryContactName: 'Management Team',
+                familyId: `MGMT_TEAM`,
+                isManagement: true,
+                roomNumber: mgmtRoomAssignments[m.id] || '',
+            });
+        });
+
         return list;
-    }, [registrations]);
+    }, [registrations, globalMgmtMembers, mgmtSelectedIds, mgmtRoomAssignments]);
 
     // Data groupings
     const { unassignedNormalGroups, unassignedTwoSharing, assignedRooms } = useMemo(() => {
@@ -167,6 +209,10 @@ export const RoomAllotment = () => {
         const membersDataToAssign: MemberItem[] = [];
 
         for (const memberId of memberIdsToAssign) {
+            if (memberId.startsWith('MGMT_')) {
+                // Management members skip package validation
+                continue;
+            }
             const [regId, memberIndexStr] = memberId.split('_');
             const memberIndex = parseInt(memberIndexStr, 10);
             const reg = registrations.find(r => r.id === regId);
@@ -245,22 +291,26 @@ export const RoomAllotment = () => {
 
             // We need to group updates by registrationId
             const updatesByReg: Record<string, Registration> = {};
-
-
+            const mgmtUpdates: Record<string, string> = { ...mgmtRoomAssignments };
 
             memberIdsToAssign.forEach((memberId, index) => {
                 const roomIndex = Math.floor(index / 3);
                 const assignedRoomName = generatedRooms[roomIndex];
 
-                const [regId, memberIndexStr] = memberId.split('_');
-                const memberIndex = parseInt(memberIndexStr, 10);
+                if (memberId.startsWith('MGMT_')) {
+                    const mgmtId = memberId.replace('MGMT_', '').replace('_0', '');
+                    mgmtUpdates[mgmtId] = assignedRoomName;
+                } else {
+                    const [regId, memberIndexStr] = memberId.split('_');
+                    const memberIndex = parseInt(memberIndexStr, 10);
 
-                if (!updatesByReg[regId]) {
-                    updatesByReg[regId] = JSON.parse(JSON.stringify(registrations.find(r => r.id === regId))); // Deep copy
-                }
+                    if (!updatesByReg[regId]) {
+                        updatesByReg[regId] = JSON.parse(JSON.stringify(registrations.find(r => r.id === regId))); // Deep copy
+                    }
 
-                if (updatesByReg[regId] && updatesByReg[regId].members[memberIndex]) {
-                    updatesByReg[regId].members[memberIndex].roomNumber = assignedRoomName;
+                    if (updatesByReg[regId] && updatesByReg[regId].members[memberIndex]) {
+                        updatesByReg[regId].members[memberIndex].roomNumber = assignedRoomName;
+                    }
                 }
             });
 
@@ -269,6 +319,13 @@ export const RoomAllotment = () => {
                 const regRef = doc(db, 'registrations', regId);
                 return updateDoc(regRef, { members: updatedReg.members });
             });
+
+            // Save management room assignments if any changed
+            const hasMgmtChanges = memberIdsToAssign.some(id => id.startsWith('MGMT_'));
+            if (hasMgmtChanges) {
+                const mgmtDocRef = doc(db, 'config', 'management_room_assignments');
+                updatePromises.push(setDoc(mgmtDocRef, { assignments: mgmtUpdates }));
+            }
 
             await Promise.all(updatePromises);
 
@@ -290,14 +347,23 @@ export const RoomAllotment = () => {
                 ? getMasterApp()
                 : getDynamicApp(currentYatra.id, currentYatra.config);
 
-            const regRef = doc(db, 'registrations', member.registrationId);
-            const reg = registrations.find(r => r.id === member.registrationId);
+            if (member.isManagement) {
+                // Remove from management room assignments
+                const mgmtId = member.registrationId.replace('MGMT_', '');
+                const updatedAssignments = { ...mgmtRoomAssignments };
+                delete updatedAssignments[mgmtId];
+                const mgmtDocRef = doc(db, 'config', 'management_room_assignments');
+                await setDoc(mgmtDocRef, { assignments: updatedAssignments });
+            } else {
+                const regRef = doc(db, 'registrations', member.registrationId);
+                const reg = registrations.find(r => r.id === member.registrationId);
 
-            if (reg) {
-                const updatedMembers = [...reg.members];
-                if (updatedMembers[member.memberIndex]) {
-                    updatedMembers[member.memberIndex].roomNumber = ''; // Clear room
-                    await updateDoc(regRef, { members: updatedMembers });
+                if (reg) {
+                    const updatedMembers = [...reg.members];
+                    if (updatedMembers[member.memberIndex]) {
+                        updatedMembers[member.memberIndex].roomNumber = ''; // Clear room
+                        await updateDoc(regRef, { members: updatedMembers });
+                    }
                 }
             }
         } catch (error) {
@@ -513,7 +579,8 @@ export const RoomAllotment = () => {
                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-bold flex-shrink-0", badgeStyle)}>{genderLabel}</span>
                                                                 <p className={cn("text-sm font-medium truncate shrink", textStyle)}>{m.name}</p>
-                                                                {isSenior && <span className="text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-bold tracking-wider flex-shrink-0">SENIOR</span>}
+                                                                {m.isManagement && <span className="text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-bold tracking-wider flex-shrink-0">MGMT</span>}
+                                                                {isSenior && !m.isManagement && <span className="text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-bold tracking-wider flex-shrink-0">SENIOR</span>}
                                                             </div>
                                                         </div>
                                                         <div className="flex-shrink-0 text-right">
@@ -613,7 +680,8 @@ export const RoomAllotment = () => {
                                                             <span className={cn("text-[10px] px-1 py-[1px] rounded border font-bold flex-shrink-0", badgeStyle)}>{genderLabel}</span>
                                                             <p className={cn("truncate shrink", textStyle)}>
                                                                 {m.name}
-                                                                {isSenior && <span className="ml-1.5 text-[9px] bg-amber-500/90 text-black px-1 py-[1px] rounded font-bold inline-block">55+</span>}
+                                                                {m.isManagement && <span className="ml-1.5 text-[9px] bg-amber-500/90 text-black px-1 py-[1px] rounded font-bold inline-block">MGMT</span>}
+                                                                {isSenior && !m.isManagement && <span className="ml-1.5 text-[9px] bg-amber-500/90 text-black px-1 py-[1px] rounded font-bold inline-block">55+</span>}
                                                             </p>
                                                         </div>
                                                         <span className="text-[9px] bg-white/5 text-gray-400 px-1 py-[1px] border border-white/10 rounded flex-shrink-0 ml-2">

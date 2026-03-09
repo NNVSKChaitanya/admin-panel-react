@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { LayoutDashboard, PlusCircle, ChevronsLeft, Map, Settings, LogOut, KeyRound, Users, Banknote, BedDouble } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ChevronsLeft, Map, Settings, LogOut, KeyRound, Users, Banknote, BedDouble, Shield } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { LoginModal } from '../components/Auth/LoginModal';
@@ -181,6 +181,18 @@ export const MainLayout = () => {
                         >
                             <BedDouble className="w-4 h-4" />
                             Rooms
+                        </Link>
+                        <Link
+                            to="/management"
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300",
+                                isActive('/management')
+                                    ? "bg-amber-600 text-white shadow-lg shadow-amber-500/20"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <Shield className="w-4 h-4" />
+                            Team
                         </Link>
                     </div>
 

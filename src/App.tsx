@@ -9,6 +9,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ defau
 const Registrations = lazy(() => import('./pages/Registrations').then(module => ({ default: module.Registrations })));
 const PaymentTracking = lazy(() => import('./pages/PaymentTracking').then(module => ({ default: module.PaymentTracking })));
 const RoomAllotment = lazy(() => import('./pages/RoomAllotment').then(module => ({ default: module.RoomAllotment })));
+const ManagementTeam = lazy(() => import('./pages/ManagementTeam').then(module => ({ default: module.ManagementTeam })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +62,14 @@ function App() {
               element={
                 <Suspense fallback={<LoadingSpinner />}>
                   <RoomAllotment />
+                </Suspense>
+              }
+            />
+            <Route
+              path="management"
+              element={
+                <Suspense fallback={<LoadingSpinner />}>
+                  <ManagementTeam />
                 </Suspense>
               }
             />

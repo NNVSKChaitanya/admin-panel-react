@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRegistrations } from '../hooks/useRegistrations';
+import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
 import { useAppStore } from '../store/useAppStore';
 import {
     Users,
@@ -18,7 +19,13 @@ import { cn } from '../lib/utils';
 export const Dashboard = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
+    const { members: globalMgmtMembers } = useManagementTeam();
+    const { selectedIds: mgmtSelectedIds } = useYatraManagementSelection();
     const navigate = useNavigate();
+
+    const mgmtCount = globalMgmtMembers.filter(m => mgmtSelectedIds.includes(m.id)).length;
+    const mgmtMaleCount = globalMgmtMembers.filter(m => mgmtSelectedIds.includes(m.id) && ['male', 'm'].includes((m.gender || '').toLowerCase())).length;
+    const mgmtFemaleCount = globalMgmtMembers.filter(m => mgmtSelectedIds.includes(m.id) && ['female', 'f'].includes((m.gender || '').toLowerCase())).length;
 
     // --- Stats Aggregation Logic ---
     const stats = useMemo(() => {
@@ -33,8 +40,13 @@ export const Dashboard = () => {
 
         let singleTravellers = 0;
         let familyGroups = 0;
+        let maleCount = 0;
+        let femaleCount = 0;
+
+        const twoSharingPerPerson = currentYatra?.config?.twoSharingAmount || 0;
 
         const familySizeCounts: Record<number, number> = {};
+        const packageGenderCounts: Record<string, { male: number; female: number; total: number }> = {};
         const ageGroups: Record<string, number> = {
             '0-5': 0, '6-12': 0, '13-18': 0, '19-30': 0,
             '31-50': 0, '51-60': 0, '61-70': 0, '71+': 0
@@ -100,6 +112,30 @@ export const Dashboard = () => {
                 }
             }
 
+            // 2-Sharing Premium
+            const hasTwoSharingMembers = reg.members?.some(m => m.isTwoSharing);
+            if (hasTwoSharingMembers && twoSharingPerPerson > 0) {
+                const twoSharingCount = reg.members!.filter(m => m.isTwoSharing).length;
+                // Check if 2-sharing is already included as an installment
+                const existingTwoSharingInstallment = reg.paymentDetails?.installments?.find(i => i.name === '2 Sharing Premium');
+                if (!existingTwoSharingInstallment) {
+                    const twoSharingFee = twoSharingCount * twoSharingPerPerson;
+                    totalAmount += twoSharingFee;
+
+                    const twoSharingAssigned = (reg.paymentDetails as any)?.twoSharingAssignedTo || '';
+                    if (twoSharingAssigned === 'cash') {
+                        cashAmount += twoSharingFee;
+                    } else if (twoSharingAssigned === 'chaitanya') {
+                        onlineAmount += twoSharingFee;
+                        onlineChaitanyaAmount += twoSharingFee;
+                    } else if (twoSharingAssigned === 'narayana') {
+                        onlineAmount += twoSharingFee;
+                        onlineNarayanaAmount += twoSharingFee;
+                    }
+                    // If unassigned, it adds to total but not to any specific account
+                }
+            }
+
             if (reg.paymentStatus === 'pending_verification' || reg.paymentDetails?.paymentStatus === 'verification_pending') {
                 pendingRecords++;
             }
@@ -128,6 +164,19 @@ export const Dashboard = () => {
                     else if (age <= 70) ageGroups['61-70']++;
                     else ageGroups['71+']++;
                 }
+
+                const g = (m.gender || '').toLowerCase();
+                if (g === 'male' || g === 'm') maleCount++;
+                else if (g === 'female' || g === 'f') femaleCount++;
+
+                if (m.packageName) {
+                    if (!packageGenderCounts[m.packageName]) {
+                        packageGenderCounts[m.packageName] = { male: 0, female: 0, total: 0 };
+                    }
+                    packageGenderCounts[m.packageName].total++;
+                    if (g === 'male' || g === 'm') packageGenderCounts[m.packageName].male++;
+                    else if (g === 'female' || g === 'f') packageGenderCounts[m.packageName].female++;
+                }
             });
         });
 
@@ -143,9 +192,12 @@ export const Dashboard = () => {
             singleTravellers,
             familyGroups,
             familySizeCounts,
-            ageGroups
+            ageGroups,
+            maleCount,
+            femaleCount,
+            packageGenderCounts
         };
-    }, [registrations]);
+    }, [registrations, currentYatra]);
 
     if (isLoading) {
         return (
@@ -167,19 +219,46 @@ export const Dashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <StatsCard
                     title="Total Travellers"
-                    value={stats.totalTravellers}
+                    value={stats.totalTravellers + mgmtCount}
                     icon={Users}
                     color="text-purple-400"
                     bg="bg-purple-500/10"
-                    trend={`${stats.familyGroups} Families`}
+                    trend={mgmtCount > 0 ? `${stats.totalTravellers} Reg + ${mgmtCount} Mgmt` : `${stats.familyGroups} Families`}
                 />
+                <StatsCard
+                    title="Male"
+                    value={stats.maleCount + mgmtMaleCount}
+                    icon={PersonStanding}
+                    color="text-blue-400"
+                    bg="bg-blue-500/10"
+                    trend={mgmtMaleCount > 0 ? `${stats.maleCount} Reg + ${mgmtMaleCount} Mgmt` : undefined}
+                />
+                <StatsCard
+                    title="Female"
+                    value={stats.femaleCount + mgmtFemaleCount}
+                    icon={PersonStanding}
+                    color="text-pink-400"
+                    bg="bg-pink-500/10"
+                    trend={mgmtFemaleCount > 0 ? `${stats.femaleCount} Reg + ${mgmtFemaleCount} Mgmt` : undefined}
+                />
+                {Object.keys(stats.packageGenderCounts).length > 0 && Object.entries(stats.packageGenderCounts).map(([pkg, counts]) => (
+                    <StatsCard
+                        key={pkg}
+                        title={pkg}
+                        value={counts.total}
+                        icon={Activity}
+                        color="text-amber-400"
+                        bg="bg-amber-500/10"
+                        trend={`♂ ${counts.male}  ♀ ${counts.female}`}
+                    />
+                ))}
                 <StatsCard
                     title="Total Revenue"
                     value={`₹${stats.totalAmount.toLocaleString()}`}
                     icon={Banknote}
                     color="text-green-400"
                     bg="bg-green-500/10"
-                    trend="₹0 Pending" // TODO: Calculate pending
+                    trend="₹0 Pending"
                 />
                 <StatsCard
                     title="Online Collections"

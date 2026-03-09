@@ -115,3 +115,10 @@ export interface Cancellation {
     originalData?: Registration; // Snapshot of the original registration data at the time of cancellation
     refundPercentageApplied?: number;
 }
+
+export interface ManagementMember {
+    id: string;
+    name: string;
+    age: string | number;
+    gender: string;
+}
