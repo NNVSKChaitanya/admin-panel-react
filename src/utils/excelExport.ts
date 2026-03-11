@@ -333,3 +333,103 @@ export const exportCancellationsToExcel = (
 
     XLSX.writeFile(wb, `${filename}.xlsx`);
 };
+
+// Rooms Export Headers
+const ROOM_HEADERS = [
+    'Room Number',
+    'Room Type',
+    // Member info
+    'Member Name',
+    'Age',
+    'Gender',
+    'Phone',
+    'Package',
+    'Special', // Mgmt/Senior
+];
+
+/**
+ * Export room allotments to Excel with proper formatting and cell merging for grouped data
+ */
+export const exportRoomsToExcel = (
+    assignedRooms: Array<{ roomNumber: string; members: any[]; isTwoSharingRoom: boolean }>,
+    options: ExportOptions = {}
+) => {
+    const { filename = 'rooms_allotment_export', sheetName = 'Rooms' } = options;
+
+    const data: any[][] = [];
+    const merges: XLSX.Range[] = [];
+
+    // Add headers
+    data.push(ROOM_HEADERS);
+
+    let currentRow = 1;
+
+    assignedRooms.forEach((room) => {
+        const memberCount = Math.max(room.members?.length || 1, 1);
+        const startRow = currentRow;
+
+        const roomType = room.isTwoSharingRoom ? '2 Sharing' : 'Standard';
+
+        if (room.members && room.members.length > 0) {
+            room.members.forEach((member, idx) => {
+                const ageNum = parseInt(String(member.age), 10);
+                const isSenior = !isNaN(ageNum) && ageNum >= 55;
+                const specialTags = [];
+                if (member.isManagement) specialTags.push('MGMT');
+                if (isSenior && !member.isManagement) specialTags.push('SENIOR');
+
+                const row = [
+                    idx === 0 ? room.roomNumber : '',
+                    idx === 0 ? roomType : '',
+                    member.name || '',
+                    member.age || '',
+                    member.gender || '',
+                    member.phone || '',
+                    member.packageName || '',
+                    specialTags.join(', '),
+                ];
+                data.push(row);
+            });
+        } else {
+            // Empty room
+            const row = [
+                room.roomNumber,
+                roomType,
+                '', '', '', '', '', ''
+            ];
+            data.push(row);
+        }
+
+        if (memberCount > 1) {
+            // Merge columns: 0 (Room Number) and 1 (Room Type)
+            const mergeColumns = [0, 1];
+            mergeColumns.forEach(col => {
+                merges.push({
+                    s: { r: startRow, c: col },
+                    e: { r: startRow + memberCount - 1, c: col }
+                });
+            });
+        }
+
+        currentRow += memberCount;
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!merges'] = merges;
+
+    ws['!cols'] = [
+        { wch: 15 }, // Room Number
+        { wch: 15 }, // Room Type
+        { wch: 25 }, // Member Name
+        { wch: 6 },  // Age
+        { wch: 8 },  // Gender
+        { wch: 15 }, // Phone
+        { wch: 15 }, // Package
+        { wch: 15 }, // Special
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+};

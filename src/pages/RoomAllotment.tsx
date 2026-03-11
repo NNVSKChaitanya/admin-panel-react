@@ -5,8 +5,9 @@ import type { Registration, Member } from '../types';
 import { doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
 import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
-import { Loader2, Users, BedDouble, AlertCircle, X } from 'lucide-react';
+import { Loader2, Users, BedDouble, AlertCircle, X, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { exportRoomsToExcel } from '../utils/excelExport';
 
 // --- Types for the Board ---
 interface MemberItem extends Member {
@@ -86,6 +87,7 @@ export const RoomAllotment = () => {
     // Selection state for multi-select
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
     const [assignRoomInput, setAssignRoomInput] = useState('');
+    const [roomCapacity, setRoomCapacity] = useState<number>(3);
 
     // Normalize Data into Member Items
     const allMembers = useMemo(() => {
@@ -199,8 +201,8 @@ export const RoomAllotment = () => {
     const handleAssignRoom = async (startingRoomNumber: string, memberIdsToAssign: string[] = selectedMembers) => {
         if (!currentYatra || memberIdsToAssign.length === 0) return;
 
-        if (memberIdsToAssign.length % 3 !== 0) {
-            alert("Standard rooms require members in multiples of 3.");
+        if (memberIdsToAssign.length % roomCapacity !== 0) {
+            alert(`Standard rooms require members in multiples of ${roomCapacity}.`);
             return;
         }
 
@@ -237,7 +239,7 @@ export const RoomAllotment = () => {
                 ? getMasterApp()
                 : getDynamicApp(currentYatra.id, currentYatra.config);
 
-            const roomsNeeded = memberIdsToAssign.length / 3;
+            const roomsNeeded = memberIdsToAssign.length / roomCapacity;
             const generatedRooms: string[] = [];
 
             if (startingRoomNumber.trim() === '') {
@@ -294,7 +296,7 @@ export const RoomAllotment = () => {
             const mgmtUpdates: Record<string, string> = { ...mgmtRoomAssignments };
 
             memberIdsToAssign.forEach((memberId, index) => {
-                const roomIndex = Math.floor(index / 3);
+                const roomIndex = Math.floor(index / roomCapacity);
                 const assignedRoomName = generatedRooms[roomIndex];
 
                 if (memberId.startsWith('MGMT_')) {
@@ -465,7 +467,18 @@ export const RoomAllotment = () => {
                     <h1 className="text-2xl font-bold text-white">Room Allotment</h1>
                     <p className="text-gray-400 text-sm">Manage room assignments for all travellers.</p>
                 </div>
-                {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                <div className="flex items-center gap-4">
+                    {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                    <button
+                        onClick={() => exportRoomsToExcel(assignedRooms, { filename: `Rooms_${currentYatra?.name || 'Export'}` })}
+                        disabled={assignedRooms.length === 0}
+                        className="flex items-center gap-2 bg-green-600/20 hover:bg-green-600/40 text-green-300 border border-green-500/30 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Export Allotments to Excel"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0">
@@ -605,15 +618,28 @@ export const RoomAllotment = () => {
                         {/* Action Bar for Assignment */}
                         {selectedMembers.length > 0 && (
                             <div className="mt-4 p-4 bg-purple-900 border border-purple-500 rounded-xl shadow-2xl animate-slide-up flex-shrink-0 z-10">
-                                <h4 className="text-sm font-bold text-white mb-3">Assign {selectedMembers.length} Selected Member(s)</h4>
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="text-sm font-bold text-white">Assign {selectedMembers.length} Selected Member(s)</h4>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs font-medium text-purple-200">Capacity:</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="10"
+                                            value={roomCapacity}
+                                            onChange={(e) => setRoomCapacity(Math.max(1, parseInt(e.target.value) || 1))}
+                                            className="w-16 bg-black/30 border border-purple-500/50 rounded px-2 py-1 text-white text-xs outline-none focus:border-purple-300"
+                                        />
+                                    </div>
+                                </div>
 
-                                {selectedMembers.length % 3 !== 0 ? (
+                                {selectedMembers.length % roomCapacity !== 0 ? (
                                     <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-3 text-red-100 text-sm">
                                         <p className="font-bold flex items-center gap-1.5 mb-1 text-red-200">
                                             <AlertCircle className="w-4 h-4" />
                                             Incomplete Room
                                         </p>
-                                        <p>Standard sharing requires exactly 3 members per room. Please select <strong>{3 - (selectedMembers.length % 3)} more</strong> member(s), or deselect to reach a multiple of 3.</p>
+                                        <p>Standard sharing requires exactly {roomCapacity} members per room. Please select <strong>{roomCapacity - (selectedMembers.length % roomCapacity)} more</strong> member(s), or deselect to reach a multiple of {roomCapacity}.</p>
                                     </div>
                                 ) : (
                                     <div className="flex gap-2">
@@ -621,7 +647,7 @@ export const RoomAllotment = () => {
                                             type="text"
                                             value={assignRoomInput}
                                             onChange={e => setAssignRoomInput(e.target.value)}
-                                            placeholder={selectedMembers.length > 3 ? "Starting Room No. (optional)" : "Room No. (optional)"}
+                                            placeholder={selectedMembers.length > roomCapacity ? "Starting Room No. (optional)" : "Room No. (optional)"}
                                             className="input-glass text-sm flex-1 font-bold text-white placeholder:text-white/30"
                                             onKeyDown={e => e.key === 'Enter' && handleAssignRoom(assignRoomInput)}
                                         />
@@ -630,7 +656,7 @@ export const RoomAllotment = () => {
                                             disabled={isUpdating}
                                             className="bg-white text-purple-900 hover:bg-gray-100 disabled:opacity-50 px-4 py-2 rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2 whitespace-nowrap"
                                         >
-                                            Assign {selectedMembers.length / 3} Room(s)
+                                            Assign {selectedMembers.length / roomCapacity} Room(s)
                                         </button>
                                     </div>
                                 )}
