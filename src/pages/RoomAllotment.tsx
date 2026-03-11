@@ -5,7 +5,7 @@ import type { Registration, Member } from '../types';
 import { doc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
 import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
-import { Loader2, Users, BedDouble, AlertCircle, X, Shield } from 'lucide-react';
+import { Loader2, Users, BedDouble, AlertCircle, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 // --- Types for the Board ---
@@ -58,8 +58,8 @@ const getMemberStyles = (gender: string, age: string | number) => {
 export const RoomAllotment = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
-    const { members: globalMgmtMembers, isLoading: isLoadingMgmt } = useManagementTeam();
-    const { selectedIds: mgmtSelectedIds, isLoading: isLoadingMgmtSel } = useYatraManagementSelection();
+    const { members: globalMgmtMembers } = useManagementTeam();
+    const { selectedIds: mgmtSelectedIds } = useYatraManagementSelection();
     const [isUpdating, setIsUpdating] = useState(false);
 
     // Management room assignments (stored separately)
@@ -106,7 +106,7 @@ export const RoomAllotment = () => {
 
         // Inject selected management members
         const selectedMgmt = globalMgmtMembers.filter(m => mgmtSelectedIds.includes(m.id));
-        selectedMgmt.forEach((m, idx) => {
+        selectedMgmt.forEach((m) => {
             list.push({
                 name: m.name,
                 age: m.age,
