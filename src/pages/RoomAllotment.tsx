@@ -376,6 +376,83 @@ export const RoomAllotment = () => {
         }
     };
 
+    const handleDragStart = (e: React.DragEvent, member: MemberItem) => {
+        const id = member.isManagement ? member.registrationId : `${member.registrationId}_${member.memberIndex}`;
+        e.dataTransfer.setData('memberId', id);
+        e.dataTransfer.setData('currentRoom', member.roomNumber || '');
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDropToUnassigned = async (e: React.DragEvent) => {
+        e.preventDefault();
+        const memberId = e.dataTransfer.getData('memberId');
+        const currentRoom = e.dataTransfer.getData('currentRoom');
+        
+        if (!memberId || !currentRoom) return; // Already unassigned or invalid
+        
+        const member = allMembers.find(m => {
+            const id = m.isManagement ? m.registrationId : `${m.registrationId}_${m.memberIndex}`;
+            return id === memberId;
+        });
+
+        if (member) {
+            await handleRemoveFromRoom(member);
+        }
+    };
+
+    const handleDropIntoRoom = async (e: React.DragEvent, targetRoomNumber: string) => {
+        e.preventDefault();
+        const memberId = e.dataTransfer.getData('memberId');
+        const currentRoom = e.dataTransfer.getData('currentRoom');
+
+        if (!currentYatra || !memberId || currentRoom === targetRoomNumber) return;
+
+        const targetMember = allMembers.find(m => {
+            const id = m.isManagement ? m.registrationId : `${m.registrationId}_${m.memberIndex}`;
+            return id === memberId;
+        });
+
+        if (!targetMember) return;
+
+        // Validate package mismatch with destination
+        const existingRoom = assignedRooms.find(r => r.roomNumber === targetRoomNumber);
+        if (existingRoom && existingRoom.members.length > 0 && !targetMember.isManagement) {
+            const existingPackage = existingRoom.members[0].packageName || 'Unknown';
+            const memberPkg = targetMember.packageName || 'Unknown';
+            if (existingPackage !== memberPkg) {
+                alert(`Conflict in Room ${targetRoomNumber}: It already holds members with package '${existingPackage}'. You cannot put '${memberPkg}' member here.`);
+                return;
+            }
+        }
+
+        setIsUpdating(true);
+        try {
+            const { db } = currentYatra.isMaster
+                ? getMasterApp()
+                : getDynamicApp(currentYatra.id, currentYatra.config);
+
+            if (targetMember.isManagement) {
+                const mgmtId = targetMember.registrationId.replace('MGMT_', '');
+                const mgmtUpdates = { ...mgmtRoomAssignments, [mgmtId]: targetRoomNumber };
+                const mgmtDocRef = doc(db, 'config', 'management_room_assignments');
+                await setDoc(mgmtDocRef, { assignments: mgmtUpdates });
+            } else {
+                const reg = registrations.find(r => r.id === targetMember.registrationId);
+                if (reg && reg.members[targetMember.memberIndex]) {
+                    const updatedMembers = [...reg.members];
+                    updatedMembers[targetMember.memberIndex].roomNumber = targetRoomNumber;
+                    const regRef = doc(db, 'registrations', targetMember.registrationId);
+                    await updateDoc(regRef, { members: updatedMembers });
+                }
+            }
+        } catch (error) {
+            console.error("Failed to move room:", error);
+            alert("Failed to move room.");
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     const handleAutoAssignTwoSharing = async () => {
         if (!currentYatra || unassignedTwoSharing.length === 0) return;
 
@@ -483,7 +560,12 @@ export const RoomAllotment = () => {
 
             <div className="flex-1 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0">
                 {/* Unassigned Section */}
-                <div className="md:col-span-4 flex flex-col gap-4 min-h-0 border-r border-white/5 pr-4">
+                <div 
+                    className="md:col-span-4 flex flex-col gap-4 min-h-0 border-r border-white/5 pr-4 transition-colors"
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-white/5'); }}
+                    onDragLeave={(e) => { e.currentTarget.classList.remove('bg-white/5'); }}
+                    onDrop={(e) => { e.currentTarget.classList.remove('bg-white/5'); handleDropToUnassigned(e); }}
+                >
 
                     {/* 2 Sharing Needs Assignment */}
                     {unassignedTwoSharing.length > 0 && (
@@ -503,7 +585,12 @@ export const RoomAllotment = () => {
                                 {unassignedTwoSharing.map(m => {
                                     const { bgStyle, textStyle, badgeStyle, isSenior, genderLabel } = getMemberStyles(m.gender, m.age);
                                     return (
-                                        <div key={`${m.registrationId}_${m.memberIndex}`} className={cn("p-2 rounded border text-sm flex justify-between items-center", bgStyle)}>
+                                        <div 
+                                            key={`${m.registrationId}_${m.memberIndex}`} 
+                                            draggable
+                                            onDragStart={(e) => handleDragStart(e, m)}
+                                            className={cn("p-2 rounded border text-sm flex justify-between items-center cursor-grab active:cursor-grabbing", bgStyle)}
+                                        >
                                             <div>
                                                 <div className="flex items-center gap-2">
                                                     <span className={cn("text-xs px-1.5 py-0.5 rounded border font-bold", badgeStyle)}>{genderLabel}</span>
@@ -575,9 +662,11 @@ export const RoomAllotment = () => {
                                                 return (
                                                     <div
                                                         key={id}
+                                                        draggable
+                                                        onDragStart={(e) => handleDragStart(e, m)}
                                                         onClick={(e) => { e.stopPropagation(); toggleSelection(id); }}
                                                         className={cn(
-                                                            "p-2 rounded-lg border cursor-pointer transition-all flex items-center gap-3",
+                                                            "p-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all flex items-center gap-3",
                                                             isSelected ? "shadow-[0_0_0_2px_rgba(168,85,247,0.5)] ring-2 ring-purple-500/50" : "hover:brightness-125",
                                                             bgStyle
                                                         )}
@@ -678,8 +767,11 @@ export const RoomAllotment = () => {
                             {assignedRooms.map(room => (
                                 <div
                                     key={room.roomNumber}
+                                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-purple-500', 'bg-white/10'); }}
+                                    onDragLeave={(e) => { e.currentTarget.classList.remove('ring-2', 'ring-purple-500', 'bg-white/10'); }}
+                                    onDrop={(e) => { e.currentTarget.classList.remove('ring-2', 'ring-purple-500', 'bg-white/10'); handleDropIntoRoom(e, room.roomNumber); }}
                                     className={cn(
-                                        "rounded-xl border p-3 flex flex-col gap-2 shadow-sm relative overflow-hidden",
+                                        "rounded-xl border p-3 flex flex-col gap-2 shadow-sm relative overflow-hidden transition-all",
                                         room.isTwoSharingRoom
                                             ? "bg-indigo-900/10 border-indigo-500/20"
                                             : "bg-gray-800/40 border-white/10"
@@ -700,7 +792,12 @@ export const RoomAllotment = () => {
                                         {room.members.map(m => {
                                             const { bgStyle, textStyle, badgeStyle, genderLabel, isSenior } = getMemberStyles(m.gender, m.age);
                                             return (
-                                                <div key={`${m.registrationId}_${m.memberIndex}`} className={cn("flex items-center justify-between text-sm p-1.5 rounded border", bgStyle)}>
+                                                <div 
+                                                    key={`${m.registrationId}_${m.memberIndex}`} 
+                                                    draggable
+                                                    onDragStart={(e) => handleDragStart(e, m)}
+                                                    className={cn("flex items-center justify-between text-sm p-1.5 rounded border cursor-grab active:cursor-grabbing hover:brightness-110", bgStyle)}
+                                                >
                                                     <div className="flex-1 min-w-0 pr-2 flex items-center justify-between">
                                                         <div className="flex items-center gap-1.5 truncate">
                                                             <span className={cn("text-[10px] px-1 py-[1px] rounded border font-bold flex-shrink-0", badgeStyle)}>{genderLabel}</span>
