@@ -107,7 +107,7 @@ export const PaymentTracking = () => {
                     list.push({
                         id: `${reg.id}_full`,
                         registrationId: reg.id,
-                        type: 'full',
+                        type: 'full',                 // Kept as 'full' so the drag individually UI logic works
                         name: reg.name,
                         amount: reg.paymentDetails?.amountPaid || reg.totalAmount,
                         status: reg.paymentStatus,
@@ -115,7 +115,7 @@ export const PaymentTracking = () => {
                         originalData: reg
                     });
                 } else {
-                    // Split into individual member cards
+                    // Split into individual member cards if they have different assignments
                     reg.members?.forEach((m, idx) => {
                         let mAmount = 0;
                         if (m.packagePrice) mAmount = m.packagePrice;
@@ -124,7 +124,7 @@ export const PaymentTracking = () => {
                         list.push({
                             id: `${reg.id}_member_${idx}`,
                             registrationId: reg.id,
-                            type: 'member',
+                            type: 'member',           // These are already split, so they drag as individuals
                             index: idx,
                             name: `${m.name} (${reg.name})`,
                             amount: mAmount,
@@ -644,7 +644,7 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                     </div>
                                     
                                     {/* Members Sub-Items for Full / Multi-member entries */}
-                                    {item.type === 'full' && item.originalData.members && item.originalData.members.length > 1 && (
+                                    {(item.type === 'full' || item.type === 'installment') && item.originalData.members && item.originalData.members.length > 1 && (
                                         <div className="mt-3 pt-2 border-t border-white/5 space-y-1.5 cursor-default" onDragStart={() => {
                                             // Make sure dragging empty areas of members list doesn't drag the parent randomly
                                         }}>
