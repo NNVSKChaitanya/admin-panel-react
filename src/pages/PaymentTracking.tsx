@@ -25,7 +25,13 @@ interface PaymentItem {
 export const PaymentTracking = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
-    const [draggedItem, setDraggedItem] = useState<PaymentItem | null>(null);
+    const [draggedItems, setDraggedItems] = useState<PaymentItem[]>([]);
+    const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+    
+    // Toggle multiple member selection
+    const toggleMemberSelection = (id: string) => {
+        setSelectedMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
     const [isUpdating, setIsUpdating] = useState(false);
     const [selectedRegistration, setSelectedRegistration] = useState<Registration | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,18 +73,52 @@ export const PaymentTracking = () => {
                     }
                     // Subsequent installments (idx > 0) default to 'unassigned' if not explicitly set
 
-                    list.push({
-                        id: `${reg.id}_inst_${idx}`,
-                        registrationId: reg.id,
-                        type: 'installment',
-                        index: idx,
-                        name: `${reg.name} (Inst. ${idx + 1})`,
-                        amount: inst.amount,
-                        status: inst.status,
-                        assignedTo: assigned,
-                        originalData: reg,
-                        installmentData: inst
+                    // Check if members have differing assignments specifically for this installment
+                    const baseAssignedTo = assigned;
+                    const memberAssignments = reg.members?.map((m, mIdx) => {
+                        // For installments, we rely on a custom mapping or fallback to base
+                        // Firestore doesn't inherently support m.assignedTo per installment yet, 
+                        // so we check if there's an override like `inst.memberAssignments?.[mIdx]`
+                        // If not, we just use the base installment assignment.
+                        return (inst as any).memberAssignments?.[mIdx] !== undefined ? (inst as any).memberAssignments[mIdx] : baseAssignedTo;
                     });
+                    
+                    const allSame = memberAssignments?.length ? memberAssignments.every((a: any) => a === memberAssignments[0]) : true;
+
+                    if (allSame) {
+                        list.push({
+                            id: `${reg.id}_inst_${idx}`,
+                            registrationId: reg.id,
+                            type: 'installment',
+                            index: idx,
+                            name: `${reg.name} (Inst. ${idx + 1})`,
+                            amount: inst.amount,
+                            status: inst.status,
+                            assignedTo: memberAssignments?.[0] || baseAssignedTo,
+                            originalData: reg,
+                            installmentData: inst
+                        });
+                    } else {
+                        // Split installment into members
+                        reg.members?.forEach((m, mIdx) => {
+                            let mAmount = 0;
+                            if (m.packagePrice) mAmount = m.packagePrice;
+                            else if (reg.members.length > 0) mAmount = inst.amount / reg.members.length;
+
+                            list.push({
+                                id: `${reg.id}_inst_${idx}_member_${mIdx}`,
+                                registrationId: reg.id,
+                                type: 'member',
+                                index: mIdx,
+                                name: `${m.name} (Inst. ${idx + 1})`,
+                                amount: mAmount,
+                                status: inst.status,
+                                assignedTo: memberAssignments![mIdx] || baseAssignedTo,
+                                originalData: reg,
+                                installmentData: inst
+                            });
+                        });
+                    }
                 });
             }
             // Logic for Puri-style (Single Payment) or Hampi-style (Full Payment)
@@ -214,7 +254,48 @@ export const PaymentTracking = () => {
     };
 
     const handleDragStart = (e: React.DragEvent, item: PaymentItem) => {
-        setDraggedItem(item);
+        if (item.type === 'member' && selectedMemberIds.includes(item.id)) {
+            // Reconstruct the selected items from the parent registrations
+            // because they might not exist in the top-level `items` array yet.
+            const selectedItems: PaymentItem[] = [];
+            
+            selectedMemberIds.forEach(id => {
+                // Find if it's already a standalone member item
+                const existing = items.find(i => i.id === id);
+                if (existing) {
+                    selectedItems.push(existing);
+                } else {
+                    // It must be a sub-member inside a parent card. 
+                    // Parse the ID format: '{regId}_member_{mIdx}' or '{regId}_inst_{idx}_member_{mIdx}'
+                    const parentRegId = id.split('_')[0];
+                    const parentCard = items.find(i => i.registrationId === parentRegId && (i.type === 'full' || i.type === 'installment'));
+                    
+                    if (parentCard) {
+                        const mIdxStr = id.split('_').pop();
+                        const mIdx = mIdxStr ? parseInt(mIdxStr, 10) : 0;
+                        const m = parentCard.originalData.members?.[mIdx];
+                        if (m) {
+                            const mAmount = m.packagePrice || (parentCard.amount / (parentCard.originalData.members?.length || 1));
+                            selectedItems.push({
+                                id: id,
+                                registrationId: parentCard.registrationId,
+                                type: 'member',
+                                index: mIdx,
+                                name: `${m.name} (${parentCard.originalData.name})`,
+                                amount: mAmount,
+                                status: parentCard.status,
+                                assignedTo: parentCard.assignedTo,
+                                originalData: parentCard.originalData,
+                                installmentData: parentCard.installmentData
+                            });
+                        }
+                    }
+                }
+            });
+            setDraggedItems(selectedItems);
+        } else {
+            setDraggedItems([item]);
+        }
         e.dataTransfer.effectAllowed = 'move';
     };
 
@@ -224,8 +305,14 @@ export const PaymentTracking = () => {
     };
 
     const handleDrop = async (targetColumn: 'chaitanya' | 'narayana' | 'cash' | 'unassigned') => {
-        if (!draggedItem || !currentYatra) return;
-        if (draggedItem.assignedTo === targetColumn) return;
+        if (draggedItems.length === 0 || !currentYatra) return;
+
+        // Filter out items that are already in the target column
+        const itemsToMoveList = draggedItems.filter(item => item.assignedTo !== targetColumn);
+        if (itemsToMoveList.length === 0) {
+            setDraggedItems([]);
+            return;
+        }
 
         setIsUpdating(true);
         try {
@@ -233,88 +320,133 @@ export const PaymentTracking = () => {
                 ? getMasterApp()
                 : getDynamicApp(currentYatra.id, currentYatra.config);
 
-            const regRef = doc(db, 'registrations', draggedItem.registrationId);
+            // Group by registrationId to optimize writes and avoid array clobbering within same doc
+            const groupedByReg = itemsToMoveList.reduce((acc, item) => {
+                if (!acc[item.registrationId]) acc[item.registrationId] = [];
+                acc[item.registrationId].push(item);
+                return acc;
+            }, {} as Record<string, PaymentItem[]>);
 
-            // Prepare Update Data
-            const updates: any = {};
+            for (const [regId, itemsToMove] of Object.entries(groupedByReg)) {
+                const baseData = itemsToMove[0].originalData;
+                const regRef = doc(db, 'registrations', regId);
+                const updates: any = {};
+                
+                const members = [...(baseData.members || [])];
+                const installments = [...(baseData.paymentDetails?.installments || [])];
+                let hasMemberUpdates = false;
+                let hasInstallmentUpdates = false;
 
-            if (draggedItem.type === 'twoSharing') {
-                // Updating 2-sharing assignment
-                updates['paymentDetails.twoSharingAssignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
-            } else if (draggedItem.type === 'installment' && typeof draggedItem.index === 'number') {
-                // Updating specific installment
-                const installments = [...(draggedItem.originalData.paymentDetails?.installments || [])];
-                if (installments[draggedItem.index]) {
-                    installments[draggedItem.index] = {
-                        ...installments[draggedItem.index],
-                        assignedTo: targetColumn === 'unassigned' ? null : targetColumn,
-                        status: targetColumn !== 'unassigned' ? 'paid' : installments[draggedItem.index].status
-                    };
+                itemsToMove.forEach(item => {
+                    if (item.type === 'twoSharing') {
+                        // Updating 2-sharing assignment
+                        updates['paymentDetails.twoSharingAssignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
+                    } else if (item.type === 'installment' && typeof item.index === 'number') {
+                        // Updating specific installment
+                        if (installments[item.index]) {
+                            installments[item.index] = {
+                                ...installments[item.index],
+                                assignedTo: targetColumn === 'unassigned' ? null : targetColumn,
+                                status: targetColumn !== 'unassigned' ? 'paid' : installments[item.index].status
+                            };
+                            hasInstallmentUpdates = true;
+                        }
+                    } else if (item.type === 'member' && typeof item.index === 'number') {
+                        // Updating specific member assignment
+                        // Handle installment member assignment specifically if it's an installment
+                        if (item.installmentData && typeof item.installmentData.index === 'undefined') {
+                            // Find the actual installment index in original data
+                            const instIdx = installments.findIndex(i => i.name === item.installmentData!.name);
+                            if (instIdx >= 0 && installments[instIdx]) {
+                                const currentInst = installments[instIdx] as any;
+                                const ms = currentInst.memberAssignments || [];
+                                ms[item.index] = targetColumn === 'unassigned' ? null : targetColumn;
+                                installments[instIdx] = {
+                                    ...installments[instIdx],
+                                    memberAssignments: ms
+                                } as any;
+                                hasInstallmentUpdates = true;
+                            }
+                        } else if (members[item.index]) {
+                            members[item.index] = {
+                                ...members[item.index],
+                                assignedTo: targetColumn === 'unassigned' ? null : targetColumn
+                            };
+                            hasMemberUpdates = true;
+                        }
+                    } else if (item.type === 'full') {
+                        // Updating main record (full payment)
+                        updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
+                        if (targetColumn !== 'unassigned') {
+                            updates['paymentStatus'] = 'verified';
+                            updates['paymentDetails.paymentStatus'] = 'verified';
+                        }
+                        
+                        // Overwrite any stray member assignments cleanly
+                        members.forEach(m => {
+                            if (m.assignedTo !== undefined) {
+                                delete m.assignedTo;
+                                hasMemberUpdates = true;
+                            }
+                        });
+                    }
+                });
+
+                if (hasInstallmentUpdates) {
                     updates['paymentDetails.installments'] = installments;
-
+                    
                     // Recalculate amountPaid
                     const newAmountPaid = installments.reduce((acc, inst) => {
                         return (inst.status === 'paid' || (inst.status as string) === 'verified') ? acc + (inst.amount || 0) : acc;
                     }, 0);
                     updates['paymentDetails.amountPaid'] = newAmountPaid;
                 }
-            } else if (draggedItem.type === 'member' && typeof draggedItem.index === 'number') {
-                // Updating specific member assignment
-                const members = [...(draggedItem.originalData.members || [])];
-                const currentMember = members[draggedItem.index];
-                members[draggedItem.index] = {
-                    ...currentMember,
-                    assignedTo: targetColumn === 'unassigned' ? null : targetColumn
-                };
-                updates['members'] = members;
 
-                // Check if all members now have the same assignment
-                const fallbackAssigned = draggedItem.originalData.paymentDetails?.assignedTo || null;
-                const allAssignedToTarget = members.every(m => {
-                    const mAssigned = m.assignedTo !== undefined ? m.assignedTo : fallbackAssigned;
-                    return mAssigned === targetColumn || (mAssigned === null && targetColumn === 'unassigned');
-                });
-
-                if (allAssignedToTarget) {
-                    updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
-                    if (targetColumn !== 'unassigned') {
-                        updates['paymentStatus'] = 'verified';
-                        updates['paymentDetails.paymentStatus'] = 'verified';
-                    }
-                    // Clean up individual assignments if they match parent
-                    members.forEach(m => { delete m.assignedTo; });
-                }
-
-            } else {
-                // Updating main record (full payment)
-                updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
-                if (targetColumn !== 'unassigned') {
-                    updates['paymentStatus'] = 'verified';
-                    updates['paymentDetails.paymentStatus'] = 'verified';
-                }
-                
-                // Also overwrite any stray member assignments to keep it unified
-                const members = [...(draggedItem.originalData.members || [])];
-                let membersUpdated = false;
-                members.forEach(m => {
-                    if (m.assignedTo !== undefined) {
-                        delete m.assignedTo;
-                        membersUpdated = true;
-                    }
-                });
-                if (membersUpdated) {
+                if (hasMemberUpdates) {
                     updates['members'] = members;
+
+                    // Check if ALL members now have the SAME target column (re-merging split cards)
+                    const fallbackAssigned = baseData.paymentDetails?.assignedTo || null;
+                    const allAssignedToTarget = members.every(m => {
+                        const mAssigned = m.assignedTo !== undefined ? m.assignedTo : fallbackAssigned;
+                        // For unassigned, we treat null and 'unassigned' as same
+                        if (targetColumn === 'unassigned') return mAssigned === null || mAssigned === 'unassigned';
+                        return mAssigned === targetColumn;
+                    });
+
+                    // If unanimous, merge back to parent assignment
+                    // Only apply parent overwrite logic properly if we are dealing with a standard full payment
+                    // that isn't overridden by partial multi-installment system. But Puri has simple assignedTo, so it works.
+                    if (allAssignedToTarget) {
+                        updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
+                        if (targetColumn !== 'unassigned') {
+                            updates['paymentStatus'] = 'verified';
+                            updates['paymentDetails.paymentStatus'] = 'verified';
+                        }
+                        // Strip specific assignments since the parent covers them all homogeneously
+                        members.forEach(m => { delete m.assignedTo; });
+                    }
+                }
+
+                // Firestore doesn't accept undefined values anywhere in the document.
+                // The safest, 100% foolproof way to strip all `undefined` fields deeply
+                // from a plain JavaScript object is to stringify and parse it.
+                // JSON.stringify automatically omits any keys where the value is undefined.
+                const stripUndefined = (obj: any) => JSON.parse(JSON.stringify(obj));
+
+                if (Object.keys(updates).length > 0) {
+                    const cleanUpdates = stripUndefined(updates);
+                    await updateDoc(regRef, cleanUpdates);
                 }
             }
 
-            await updateDoc(regRef, updates);
-
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to update registration:", error);
-            alert("Failed to update. Please try again.");
+            alert(`Failed to update. ${error?.message || error} - Please try again.`);
         } finally {
             setIsUpdating(false);
-            setDraggedItem(null);
+            setDraggedItems([]);
+            setSelectedMemberIds([]); // Clear selection after drop
         }
     };
 
@@ -476,6 +608,8 @@ export const PaymentTracking = () => {
                     onDragOver={handleDragOver}
                     onDragStart={handleDragStart}
                     highlightedId={highlightedId}
+                    selectedMemberIds={selectedMemberIds}
+                    toggleMemberSelection={toggleMemberSelection}
                 />
 
                 {/* Chaitanya Column */}
@@ -487,6 +621,8 @@ export const PaymentTracking = () => {
                     onDragOver={handleDragOver}
                     onDragStart={handleDragStart}
                     highlightedId={highlightedId}
+                    selectedMemberIds={selectedMemberIds}
+                    toggleMemberSelection={toggleMemberSelection}
                 />
 
                 {/* Narayana Column */}
@@ -498,6 +634,8 @@ export const PaymentTracking = () => {
                     onDragOver={handleDragOver}
                     onDragStart={handleDragStart}
                     highlightedId={highlightedId}
+                    selectedMemberIds={selectedMemberIds}
+                    toggleMemberSelection={toggleMemberSelection}
                 />
 
                 {/* Cash Column */}
@@ -509,6 +647,8 @@ export const PaymentTracking = () => {
                     onDragOver={handleDragOver}
                     onDragStart={handleDragStart}
                     highlightedId={highlightedId}
+                    selectedMemberIds={selectedMemberIds}
+                    toggleMemberSelection={toggleMemberSelection}
                 />
 
             </div>
@@ -522,7 +662,7 @@ export const PaymentTracking = () => {
     );
 };
 
-const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highlightedId }: any) => {
+const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highlightedId, selectedMemberIds, toggleMemberSelection }: any) => {
     const total = items.reduce((acc: number, item: any) => acc + (item.amount || 0), 0);
 
     // Grouping Logic
@@ -620,11 +760,24 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                     )}
                                 >
                                     <div className="flex justify-between items-start">
-                                        <div>
-                                            <p className="font-medium text-gray-200 text-sm flex items-center gap-2">
-                                                <GripVertical className="w-3 h-3 text-gray-600 group-hover:text-gray-400" />
-                                                {item.name}
-                                            </p>
+                                        <div className="flex items-start gap-2">
+                                            {item.type === 'member' && (
+                                                <input 
+                                                    type="checkbox" 
+                                                    className="mt-1 flex-shrink-0 cursor-pointer rounded border-gray-600 focus:ring-emerald-500 bg-gray-700"
+                                                    checked={selectedMemberIds?.includes(item.id) || false}
+                                                    onChange={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleMemberSelection(item.id);
+                                                    }}
+                                                />
+                                            )}
+                                            <div>
+                                                <p className="font-medium text-gray-200 text-sm flex items-center gap-2">
+                                                    <GripVertical className="w-3 h-3 text-gray-600 group-hover:text-gray-400" />
+                                                    {item.name}
+                                                </p>
+                                            </div>
                                         </div>
                                         <span className={cn(
                                             "text-xs px-1.5 py-0.5 rounded border",
@@ -651,6 +804,9 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                             <p className="text-[10px] uppercase text-gray-500 font-bold mb-1">Drag Individually:</p>
                                             {item.originalData.members.map((m: any, mIdx: number) => {
                                                 const mAmount = m.packagePrice || (item.amount / item.originalData.members.length);
+                                                const subItemId = item.type === 'installment' 
+                                                    ? `${item.registrationId}_inst_${item.index}_member_${mIdx}`
+                                                    : `${item.registrationId}_member_${mIdx}`;
                                                 return (
                                                     <div
                                                         key={`sub_${mIdx}`}
@@ -658,7 +814,7 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                                         onDragStart={(e) => {
                                                             e.stopPropagation(); // prevent parent from being dragged
                                                             onDragStart(e, {
-                                                                id: `${item.registrationId}_member_${mIdx}`,
+                                                                id: subItemId,
                                                                 registrationId: item.registrationId,
                                                                 type: 'member',
                                                                 index: mIdx,
@@ -666,12 +822,22 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                                                 amount: mAmount,
                                                                 status: item.status,
                                                                 assignedTo: item.assignedTo,
-                                                                originalData: item.originalData
+                                                                originalData: item.originalData,
+                                                                installmentData: item.installmentData
                                                             });
                                                         }}
                                                         className="bg-black/30 hover:bg-black/50 p-2 rounded flex justify-between items-center cursor-grab active:cursor-grabbing border border-white/5 transition-colors group/sub"
                                                     >
                                                         <div className="flex items-center gap-2">
+                                                            <input 
+                                                                type="checkbox"
+                                                                className="cursor-pointer rounded border-gray-600 focus:ring-emerald-500 bg-gray-700"
+                                                                checked={selectedMemberIds?.includes(subItemId) || false}
+                                                                onChange={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleMemberSelection(subItemId);
+                                                                }}
+                                                            />
                                                             <GripVertical className="w-3 h-3 text-gray-600 group-hover/sub:text-gray-400" />
                                                             <span className="text-xs text-gray-300 truncate max-w-[120px]">{m.name}</span>
                                                         </div>
