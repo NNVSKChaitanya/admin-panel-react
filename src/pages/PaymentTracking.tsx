@@ -75,7 +75,7 @@ export const PaymentTracking = () => {
 
                     // Check if members have differing assignments specifically for this installment
                     const baseAssignedTo = assigned;
-                    const memberAssignments = reg.members?.map((m, mIdx) => {
+                    const memberAssignments = reg.members?.map((_, mIdx) => {
                         // For installments, we rely on a custom mapping or fallback to base
                         // Firestore doesn't inherently support m.assignedTo per installment yet, 
                         // so we check if there's an override like `inst.memberAssignments?.[mIdx]`
@@ -354,7 +354,7 @@ export const PaymentTracking = () => {
                     } else if (item.type === 'member' && typeof item.index === 'number') {
                         // Updating specific member assignment
                         // Handle installment member assignment specifically if it's an installment
-                        if (item.installmentData && typeof item.installmentData.index === 'undefined') {
+                        if (item.installmentData && typeof (item.installmentData as any).index === 'undefined') {
                             // Find the actual installment index in original data
                             const instIdx = installments.findIndex(i => i.name === item.installmentData!.name);
                             if (instIdx >= 0 && installments[instIdx]) {
