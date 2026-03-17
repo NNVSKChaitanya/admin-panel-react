@@ -645,7 +645,7 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                     
                                     {/* Members Sub-Items for Full / Multi-member entries */}
                                     {item.type === 'full' && item.originalData.members && item.originalData.members.length > 1 && (
-                                        <div className="mt-3 pt-2 border-t border-white/5 space-y-1.5 cursor-default" onDragStart={(e) => {
+                                        <div className="mt-3 pt-2 border-t border-white/5 space-y-1.5 cursor-default" onDragStart={() => {
                                             // Make sure dragging empty areas of members list doesn't drag the parent randomly
                                         }}>
                                             <p className="text-[10px] uppercase text-gray-500 font-bold mb-1">Drag Individually:</p>
