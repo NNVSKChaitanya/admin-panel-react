@@ -12,8 +12,8 @@ import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal
 interface PaymentItem {
     id: string; // Unique ID for Drag and Drop
     registrationId: string;
-    type: 'full' | 'installment' | 'twoSharing';
-    index?: number; // Installment index
+    type: 'full' | 'installment' | 'twoSharing' | 'member';
+    index?: number; // Installment index or Member index
     name: string; // Traveller Name
     amount: number;
     status: string;
@@ -99,16 +99,41 @@ export const PaymentTracking = () => {
                     assigned = 'narayana';
                 }
 
-                list.push({
-                    id: `${reg.id}_full`,
-                    registrationId: reg.id,
-                    type: 'full',
-                    name: reg.name,
-                    amount: reg.paymentDetails?.amountPaid || reg.totalAmount,
-                    status: reg.paymentStatus,
-                    assignedTo: assigned,
-                    originalData: reg
-                });
+                // Check if members have differing assignments
+                const memberAssignments = reg.members?.map(m => m.assignedTo !== undefined ? m.assignedTo : assigned);
+                const allSame = memberAssignments?.length ? memberAssignments.every(a => a === memberAssignments[0]) : true;
+
+                if (allSame) {
+                    list.push({
+                        id: `${reg.id}_full`,
+                        registrationId: reg.id,
+                        type: 'full',
+                        name: reg.name,
+                        amount: reg.paymentDetails?.amountPaid || reg.totalAmount,
+                        status: reg.paymentStatus,
+                        assignedTo: memberAssignments?.[0] || assigned,
+                        originalData: reg
+                    });
+                } else {
+                    // Split into individual member cards
+                    reg.members?.forEach((m, idx) => {
+                        let mAmount = 0;
+                        if (m.packagePrice) mAmount = m.packagePrice;
+                        else if (reg.members.length > 0) mAmount = (reg.paymentDetails?.amountPaid || reg.totalAmount) / reg.members.length;
+
+                        list.push({
+                            id: `${reg.id}_member_${idx}`,
+                            registrationId: reg.id,
+                            type: 'member',
+                            index: idx,
+                            name: `${m.name} (${reg.name})`,
+                            amount: mAmount,
+                            status: reg.paymentStatus,
+                            assignedTo: m.assignedTo !== undefined && m.assignedTo !== null ? m.assignedTo : assigned,
+                            originalData: reg
+                        });
+                    });
+                }
             }
 
             // 2-Sharing Premium: create a separate card if members have isTwoSharing
@@ -233,12 +258,52 @@ export const PaymentTracking = () => {
                     }, 0);
                     updates['paymentDetails.amountPaid'] = newAmountPaid;
                 }
+            } else if (draggedItem.type === 'member' && typeof draggedItem.index === 'number') {
+                // Updating specific member assignment
+                const members = [...(draggedItem.originalData.members || [])];
+                const currentMember = members[draggedItem.index];
+                members[draggedItem.index] = {
+                    ...currentMember,
+                    assignedTo: targetColumn === 'unassigned' ? null : targetColumn
+                };
+                updates['members'] = members;
+
+                // Check if all members now have the same assignment
+                const fallbackAssigned = draggedItem.originalData.paymentDetails?.assignedTo || null;
+                const allAssignedToTarget = members.every(m => {
+                    const mAssigned = m.assignedTo !== undefined ? m.assignedTo : fallbackAssigned;
+                    return mAssigned === targetColumn || (mAssigned === null && targetColumn === 'unassigned');
+                });
+
+                if (allAssignedToTarget) {
+                    updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
+                    if (targetColumn !== 'unassigned') {
+                        updates['paymentStatus'] = 'verified';
+                        updates['paymentDetails.paymentStatus'] = 'verified';
+                    }
+                    // Clean up individual assignments if they match parent
+                    members.forEach(m => { delete m.assignedTo; });
+                }
+
             } else {
                 // Updating main record (full payment)
                 updates['paymentDetails.assignedTo'] = targetColumn === 'unassigned' ? null : targetColumn;
                 if (targetColumn !== 'unassigned') {
                     updates['paymentStatus'] = 'verified';
                     updates['paymentDetails.paymentStatus'] = 'verified';
+                }
+                
+                // Also overwrite any stray member assignments to keep it unified
+                const members = [...(draggedItem.originalData.members || [])];
+                let membersUpdated = false;
+                members.forEach(m => {
+                    if (m.assignedTo !== undefined) {
+                        delete m.assignedTo;
+                        membersUpdated = true;
+                    }
+                });
+                if (membersUpdated) {
+                    updates['members'] = members;
                 }
             }
 
@@ -487,6 +552,8 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                 else if (idx === 2) groups['3rd Installment'].push(item);
                 else if (idx === 3) groups['4th Installment'].push(item);
                 else groups['Other'].push(item);
+            } else if (item.type === 'member') {
+                groups['Other'].push(item);
             } else {
                 groups['Other'].push(item);
             }
@@ -575,6 +642,47 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                                         </div>
                                         <span className="font-mono font-bold text-white">₹{item.amount.toLocaleString()}</span>
                                     </div>
+                                    
+                                    {/* Members Sub-Items for Full / Multi-member entries */}
+                                    {item.type === 'full' && item.originalData.members && item.originalData.members.length > 1 && (
+                                        <div className="mt-3 pt-2 border-t border-white/5 space-y-1.5 cursor-default" onDragStart={(e) => {
+                                            // Make sure dragging empty areas of members list doesn't drag the parent randomly
+                                        }}>
+                                            <p className="text-[10px] uppercase text-gray-500 font-bold mb-1">Drag Individually:</p>
+                                            {item.originalData.members.map((m: any, mIdx: number) => {
+                                                const mAmount = m.packagePrice || (item.amount / item.originalData.members.length);
+                                                return (
+                                                    <div
+                                                        key={`sub_${mIdx}`}
+                                                        draggable
+                                                        onDragStart={(e) => {
+                                                            e.stopPropagation(); // prevent parent from being dragged
+                                                            onDragStart(e, {
+                                                                id: `${item.registrationId}_member_${mIdx}`,
+                                                                registrationId: item.registrationId,
+                                                                type: 'member',
+                                                                index: mIdx,
+                                                                name: `${m.name} (${item.originalData.name})`,
+                                                                amount: mAmount,
+                                                                status: item.status,
+                                                                assignedTo: item.assignedTo,
+                                                                originalData: item.originalData
+                                                            });
+                                                        }}
+                                                        className="bg-black/30 hover:bg-black/50 p-2 rounded flex justify-between items-center cursor-grab active:cursor-grabbing border border-white/5 transition-colors group/sub"
+                                                    >
+                                                        <div className="flex items-center gap-2">
+                                                            <GripVertical className="w-3 h-3 text-gray-600 group-hover/sub:text-gray-400" />
+                                                            <span className="text-xs text-gray-300 truncate max-w-[120px]">{m.name}</span>
+                                                        </div>
+                                                        <span className="text-xs font-mono text-gray-400">
+                                                            ₹{mAmount.toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
