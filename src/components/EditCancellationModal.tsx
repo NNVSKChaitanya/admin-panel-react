@@ -288,20 +288,38 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
                                             type="number"
                                             min="0"
                                             value={manualRefundAmount}
-                                            onChange={e => setManualRefundAmount(e.target.value)}
+                                            onChange={e => {
+                                                const amt = e.target.value;
+                                                setManualRefundAmount(amt);
+                                                // Back-calculate %: (amount + trainCharges) / amountPaid * 100
+                                                const paid = parseFloat(amountPaidForCancelled) || 0;
+                                                const train = parseFloat(trainCharges) || 0;
+                                                if (paid > 0) {
+                                                    const pct = Math.round(((parseFloat(amt) || 0) + train) / paid * 100);
+                                                    setManualRefundPercent(String(Math.min(100, Math.max(0, pct))));
+                                                }
+                                            }}
                                             className="w-full bg-black/20 border border-purple-500/40 rounded-lg pl-8 pr-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500/50 outline-none"
                                         />
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-gray-400 mb-1.5">Effective Refund % (for records)</label>
+                                    <label className="block text-xs text-gray-400 mb-1.5">Effective Refund %</label>
                                     <div className="relative">
                                         <input
                                             type="number"
                                             min="0"
                                             max="100"
                                             value={manualRefundPercent}
-                                            onChange={e => setManualRefundPercent(e.target.value)}
+                                            onChange={e => {
+                                                const pct = e.target.value;
+                                                setManualRefundPercent(pct);
+                                                // Forward-calculate amount: paid * pct/100 - trainCharges
+                                                const paid = parseFloat(amountPaidForCancelled) || 0;
+                                                const train = parseFloat(trainCharges) || 0;
+                                                const amt = Math.max(0, Math.floor(paid * (parseFloat(pct) || 0) / 100) - train);
+                                                setManualRefundAmount(String(amt));
+                                            }}
                                             className="w-full bg-black/20 border border-purple-500/40 rounded-lg px-4 pr-8 py-2.5 text-white focus:ring-2 focus:ring-purple-500/50 outline-none"
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>

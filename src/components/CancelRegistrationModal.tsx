@@ -89,6 +89,7 @@ export const CancelRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Pr
             const cancelRef = doc(collection(db, 'cancellations')); // Auto-ID
 
             const trainDeduction = parseFloat(trainCharges) || 0;
+            const isFullCancellation = selectedMembers.length === data.members.length;
 
             await runTransaction(db, async (transaction) => {
                 const regDoc = await transaction.get(regRef);
@@ -99,15 +100,45 @@ export const CancelRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Pr
                 const membersToKeep = currentData.members.filter(m => !selectedMembers.includes(m.name));
                 const membersToCancel = currentData.members.filter(m => selectedMembers.includes(m.name));
 
-                if (membersToKeep.length === 0) {
-                    // Full Cancellation → delete original
-                    transaction.delete(regRef);
+                // --- Financial adjustment: subtract refund from amountPaid ---
+                const currentPaymentDetails = currentData.paymentDetails || {};
+                const currentAmountPaid: number =
+                    currentPaymentDetails.amountPaid ?? (currentData as any).amountPaid ?? currentData.totalAmount ?? 0;
+                const newAmountPaid = Math.max(0, currentAmountPaid - netRefundAmount);
+
+                // Build the updated paymentDetails, keeping all existing fields
+                const updatedPaymentDetails = currentPaymentDetails
+                    ? { ...currentPaymentDetails, amountPaid: newAmountPaid }
+                    : undefined;
+
+                if (isFullCancellation) {
+                    // Soft-delete: keep doc for financial history but mark as cancelled
+                    const softDeleteUpdate: Record<string, any> = {
+                        status: 'cancelled',
+                        members: [],
+                        updatedAt: serverTimestamp(),
+                    };
+                    if (updatedPaymentDetails) {
+                        softDeleteUpdate.paymentDetails = updatedPaymentDetails;
+                    } else {
+                        // Simple yatra with top-level amountPaid
+                        softDeleteUpdate.amountPaid = newAmountPaid;
+                        softDeleteUpdate.totalAmount = newAmountPaid;
+                    }
+                    transaction.update(regRef, softDeleteUpdate);
                 } else {
-                    // Partial Cancellation → update members list
-                    transaction.update(regRef, {
+                    // Partial: update members list + reduce amountPaid
+                    const partialUpdate: Record<string, any> = {
                         members: membersToKeep,
-                        updatedAt: serverTimestamp()
-                    });
+                        updatedAt: serverTimestamp(),
+                    };
+                    if (updatedPaymentDetails) {
+                        partialUpdate.paymentDetails = updatedPaymentDetails;
+                    } else {
+                        partialUpdate.amountPaid = newAmountPaid;
+                        partialUpdate.totalAmount = newAmountPaid;
+                    }
+                    transaction.update(regRef, partialUpdate);
                 }
 
                 // Create Cancellation Record

@@ -99,6 +99,10 @@ export interface Registration {
     // Merge tracking
     mergedFrom?: string[];
     mergedInto?: string;
+
+    // Soft-cancel support
+    status?: 'active' | 'cancelled';
+    updatedAt?: any;
 }
 
 export interface Cancellation {

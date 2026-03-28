@@ -42,7 +42,9 @@ export const Registrations = () => {
 
     // Filter Logic
     const filteredData = useMemo(() => {
-        const sourceData = viewMode === 'registrations' ? registrations : cancellations;
+        const sourceData = viewMode === 'registrations'
+            ? registrations.filter(r => r.status !== 'cancelled')  // Exclude soft-cancelled records
+            : cancellations;
         return sourceData.filter((item: any) => {
             // 1. Payment Mode Filter (Only for active registrations)
             if (viewMode === 'registrations' && paymentMode !== 'all') {
@@ -76,6 +78,7 @@ export const Registrations = () => {
             return matchesField || matchesMember;
         });
     }, [viewMode, registrations, cancellations, searchQuery, statusFilter, whatsappFilter, paymentMode]);
+
 
     // Columns Logic
     const baseRegColumns = useTableSchema(currentYatra, filteredData as Registration[]);
