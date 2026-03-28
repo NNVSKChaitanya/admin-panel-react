@@ -101,9 +101,9 @@ export const CancelRegistrationModal = ({ isOpen, onClose, data, onSuccess }: Pr
                 const membersToCancel = currentData.members.filter(m => selectedMembers.includes(m.name));
 
                 // --- Financial adjustment: subtract refund from amountPaid ---
-                const currentPaymentDetails = currentData.paymentDetails || {};
+                const currentPaymentDetails = currentData.paymentDetails;
                 const currentAmountPaid: number =
-                    currentPaymentDetails.amountPaid ?? (currentData as any).amountPaid ?? currentData.totalAmount ?? 0;
+                    currentPaymentDetails?.amountPaid ?? (currentData as any).amountPaid ?? currentData.totalAmount ?? 0;
                 const newAmountPaid = Math.max(0, currentAmountPaid - netRefundAmount);
 
                 // Build the updated paymentDetails, keeping all existing fields

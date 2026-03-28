@@ -87,12 +87,32 @@ export const Registrations = () => {
         let cols: GridColumn[] = [];
 
         if (viewMode === 'cancellations') {
+            // Detect features from cancellation originalData snapshots
+            const hasPackages = cancellations.some(c =>
+                c.cancelledMembers?.some((m: any) => m.packageName)
+            );
+            const hasInstallments = cancellations.some(c =>
+                c.originalData?.paymentDetails?.paymentType === 'installment' ||
+                (c.originalData?.paymentDetails?.installments?.length ?? 0) > 0
+            );
+
             cols = [
                 { key: 'name', label: 'Primary Contact', type: 'text' },
                 { key: 'phone', label: 'Phone', type: 'text' },
                 { key: 'cancellationDate', label: 'Cancelled On', type: 'date' },
-                { key: 'cancelledMembers_count', label: 'Members', type: 'text' },
-                { key: 'originalData_amountPaid', label: 'Amt Paid', type: 'text' },
+                // Members / packages column — mirrors registrations tab
+                hasPackages
+                    ? { key: 'cancelledMembers_packages', label: 'Cancelled Members', type: 'badge' }
+                    : { key: 'cancelledMembers_count', label: 'Members', type: 'text' },
+                // Amount column — mirrors registrations tab
+                hasInstallments
+                    ? { key: 'originalData.paymentDetails.totalAmount', label: 'Total Amount', type: 'currency' }
+                    : { key: 'originalData_amountPaid', label: 'Amt Paid', type: 'text' },
+                // UTR of original payment
+                { key: 'originalData.paymentDetails.utrNumber', label: 'UTR/ID', type: 'text' },
+                // Which account the payment was in
+                { key: 'originalData_account', label: 'Account', type: 'badge' },
+                // Refund fields
                 { key: 'refundPercentageApplied', label: 'Refund %', type: 'text' },
                 { key: 'trainCancellationCharges', label: 'Train Charges', type: 'currency' },
                 { key: 'refundAmount', label: 'Net Refund', type: 'currency' },
@@ -118,7 +138,8 @@ export const Registrations = () => {
         }
 
         return cols;
-    }, [viewMode, baseRegColumns, user]);
+    }, [viewMode, baseRegColumns, user, cancellations]);
+
 
     const handleAction = (action: string, item: any) => {
         if (!user) return; // Guard clause

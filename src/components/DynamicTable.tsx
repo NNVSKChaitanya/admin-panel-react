@@ -56,6 +56,48 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
             return <span className="font-semibold text-white">{count}</span>;
         }
 
+        // Special key: cancelled members with package details
+        if (col.key === 'cancelledMembers_packages') {
+            const members: any[] = row.cancelledMembers || [];
+            if (members.length === 0) return <span className="text-gray-600">-</span>;
+            const types = members.reduce((acc: any, m: any) => {
+                const type = m.packageName || 'Std';
+                acc[type] = (acc[type] || 0) + 1;
+                return acc;
+            }, {});
+            const summary = Object.entries(types).map(([t, c]) => `${c} ${t}`).join(', ');
+            return (
+                <div className="flex flex-col gap-0.5">
+                    <span className="font-semibold text-white">{members.length} Cancelled</span>
+                    <span className="text-xs text-gray-400">{summary}</span>
+                    <div className="text-xs text-gray-500 max-w-[180px]">
+                        {members.map((m: any) => m.name).join(', ')}
+                    </div>
+                </div>
+            );
+        }
+
+        // Special key: account from originalData (for cancellations)
+        if (col.key === 'originalData_account') {
+            const orig = row.originalData;
+            let assigned: string | null = null;
+            if (orig?.paymentDetails?.assignedTo) {
+                assigned = orig.paymentDetails.assignedTo;
+            } else if (orig?.paymentDetails?.installments?.length) {
+                const first = orig.paymentDetails.installments.find((i: any) => i.assignedTo);
+                if (first?.assignedTo) assigned = first.assignedTo;
+            }
+            if (!assigned) {
+                const r = (orig?.remarks || '').toLowerCase();
+                if (r.includes('chaitanya')) assigned = 'chaitanya';
+                else if (r.includes('narayana')) assigned = 'narayana';
+            }
+            if (assigned === 'chaitanya') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Chaitanya</span>;
+            if (assigned === 'narayana') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">Narayana</span>;
+            if (assigned === 'cash') return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Cash</span>;
+            return <span className="text-gray-600 font-mono text-xs">-</span>;
+        }
+
         if (col.type === 'status') {
             const status = (value || 'pending').toLowerCase();
             let color = 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
@@ -109,6 +151,14 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
                     <span className="text-xs text-gray-500 mt-0.5">{summary}</span>
                 </div>
             );
+        }
+
+        // Special key: original UTR — fallback to top-level utr for older Puri-style records
+        if (col.key === 'originalData.paymentDetails.utrNumber') {
+            const utr = row.originalData?.paymentDetails?.utrNumber || row.originalData?.utr || null;
+            return utr
+                ? <span className="font-mono text-xs text-gray-300">{utr}</span>
+                : <span className="text-gray-600 font-mono text-xs">-</span>;
         }
 
         if (col.key === 'account_source') {
