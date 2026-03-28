@@ -179,72 +179,79 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
     }
 
     return (
-        <div className="w-full overflow-hidden rounded-lg border border-white/5 bg-black/20">
-            <table className="w-full text-sm text-left text-gray-300">
-                <thead className="text-xs text-gray-400 uppercase bg-black/20 border-b border-white/5">
-                    <tr>
-                        {columns.map((col) => (
-                            <th key={col.key} className="px-6 py-4 font-semibold tracking-wider">
-                                {col.label}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                    {data.map((row) => (
-                        <tr
-                            key={row.id}
-                            className="hover:bg-white/5 transition-colors group"
-                        >
-                            {columns.map((col) => (
-                                <td
-                                    key={col.key}
-                                    className="px-6 py-4 whitespace-nowrap"
-                                    onClick={() => col.key !== 'actions' && onRowClick?.(row)}
+        <div
+            className="w-full rounded-lg border border-white/5 bg-black/20"
+            data-scroll-hide=""
+            style={{ overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+        >
+            <style>{`[data-scroll-hide]::-webkit-scrollbar{display:none}`}</style>
+            <table className="text-sm text-left text-gray-300" style={{ minWidth: 'max-content', width: '100%' }}>
+                        <thead className="text-xs text-gray-400 uppercase bg-black/20 border-b border-white/5">
+                            <tr>
+                                {columns.map((col) => (
+                                    <th key={col.key} className="px-6 py-4 font-semibold tracking-wider whitespace-nowrap">
+                                        {col.label}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {data.map((row) => (
+                                <tr
+                                    key={row.id}
+                                    className="hover:bg-white/5 transition-colors group"
                                 >
-                                    {col.key === 'actions' && onAction ? (
-                                        <div className="flex items-center gap-1 justify-center">
-                                            {actionsType === 'registrations' ? (
-                                                <>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('view', row); }} className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/10 transition-colors" title="View Details">
-                                                        <Eye className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-gray-400 hover:bg-white/10 hover:text-white transition-colors" title="Edit">
-                                                        <Edit className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('merge', row); }} className="p-1.5 rounded-md text-indigo-400 hover:bg-indigo-500/10 transition-colors" title="Merge with another registration">
-                                                        <GitMerge className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('cancel', row); }} className="p-1.5 rounded-md text-orange-400 hover:bg-orange-500/10 transition-colors" title="Cancel/Refund">
-                                                        <Ban className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('delete', row); }} className="p-1.5 rounded-md text-red-500 hover:bg-red-500/10 transition-colors" title="Delete Permanently">
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </>
+                                    {columns.map((col) => (
+                                        <td
+                                            key={col.key}
+                                            className="px-6 py-4 whitespace-nowrap"
+                                            onClick={() => col.key !== 'actions' && onRowClick?.(row)}
+                                        >
+                                            {col.key === 'actions' && onAction ? (
+                                                <div className="flex items-center gap-1 justify-center">
+                                                    {actionsType === 'registrations' ? (
+                                                        <>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('view', row); }} className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/10 transition-colors" title="View Details">
+                                                                <Eye className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-gray-400 hover:bg-white/10 hover:text-white transition-colors" title="Edit">
+                                                                <Edit className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('merge', row); }} className="p-1.5 rounded-md text-indigo-400 hover:bg-indigo-500/10 transition-colors" title="Merge with another registration">
+                                                                <GitMerge className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('cancel', row); }} className="p-1.5 rounded-md text-orange-400 hover:bg-orange-500/10 transition-colors" title="Cancel/Refund">
+                                                                <Ban className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('delete', row); }} className="p-1.5 rounded-md text-red-500 hover:bg-red-500/10 transition-colors" title="Delete Permanently">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('undo', row); }} className="p-1.5 rounded-md text-green-400 hover:bg-green-500/10 transition-colors" title="Undo Cancellation">
+                                                                <RotateCcw className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/10 transition-colors" title="Edit Refund Details">
+                                                                <Edit className="w-4 h-4" />
+                                                            </button>
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('delete', row); }} className="p-1.5 rounded-md text-red-500 hover:bg-red-500/10 transition-colors" title="Delete Record">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
                                             ) : (
-                                                <>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('undo', row); }} className="p-1.5 rounded-md text-green-400 hover:bg-green-500/10 transition-colors" title="Undo Cancellation">
-                                                        <RotateCcw className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-blue-400 hover:bg-blue-500/10 transition-colors" title="Edit Refund Details">
-                                                        <Edit className="w-4 h-4" />
-                                                    </button>
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); onAction('delete', row); }} className="p-1.5 rounded-md text-red-500 hover:bg-red-500/10 transition-colors" title="Delete Record">
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </>
+                                                renderCell(row, col)
                                             )}
-                                        </div>
-                                    ) : (
-                                        renderCell(row, col)
-                                    )}
-                                </td>
+                                        </td>
+                                    ))}
+                                </tr>
                             ))}
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div >
+                        </tbody>
+                    </table>
+        </div>
     );
 };
+
+
