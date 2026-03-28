@@ -25,6 +25,37 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
             return <span className="font-mono font-medium text-emerald-400">₹{(value || 0).toLocaleString('en-IN')}</span>;
         }
 
+        // Special key: show prorated amount paid for cancelled members
+        if (col.key === 'originalData_amountPaid') {
+            // Prefer the stored prorated field saved at cancellation time
+            if (typeof row.amountPaidForCancelled === 'number') {
+                return (
+                    <span className="font-mono font-medium text-blue-300">
+                        ₹{row.amountPaidForCancelled.toLocaleString('en-IN')}
+                    </span>
+                );
+            }
+            // Fallback: compute from originalData for older records without the field
+            const orig = row.originalData;
+            if (!orig) return <span className="text-gray-600 font-mono text-xs">-</span>;
+            const totalPaid = orig?.paymentDetails?.amountPaid ?? (orig as any)?.amountPaid ?? orig?.totalAmount ?? 0;
+            const totalMembers = orig?.members?.length || 1;
+            const cancelledCount = row.cancelledMembers?.length || 1;
+            const prorated = Math.round((totalPaid / totalMembers) * cancelledCount);
+            return (
+                <div className="flex flex-col">
+                    <span className="font-mono font-medium text-blue-300">₹{prorated.toLocaleString('en-IN')}</span>
+                    <span className="text-xs text-gray-500 font-mono">(est.)</span>
+                </div>
+            );
+        }
+
+        // Special key: number of cancelled members
+        if (col.key === 'cancelledMembers_count') {
+            const count = row.cancelledMembers?.length ?? 0;
+            return <span className="font-semibold text-white">{count}</span>;
+        }
+
         if (col.type === 'status') {
             const status = (value || 'pending').toLowerCase();
             let color = 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';

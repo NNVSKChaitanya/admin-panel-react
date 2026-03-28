@@ -87,10 +87,14 @@ export const Registrations = () => {
             cols = [
                 { key: 'name', label: 'Primary Contact', type: 'text' },
                 { key: 'phone', label: 'Phone', type: 'text' },
-                { key: 'refundAmount', label: 'Refund Amount', type: 'currency' },
-                { key: 'refundStatus', label: 'Refund Status', type: 'status' }, // Should probably map status colors or custom render
+                { key: 'cancellationDate', label: 'Cancelled On', type: 'date' },
+                { key: 'cancelledMembers_count', label: 'Members', type: 'text' },
+                { key: 'originalData_amountPaid', label: 'Amt Paid', type: 'text' },
+                { key: 'refundPercentageApplied', label: 'Refund %', type: 'text' },
+                { key: 'trainCancellationCharges', label: 'Train Charges', type: 'currency' },
+                { key: 'refundAmount', label: 'Net Refund', type: 'currency' },
+                { key: 'refundStatus', label: 'Refund Status', type: 'status' },
                 { key: 'refundUtr', label: 'Refund UTR', type: 'text' },
-                // { key: 'cancelledMembers.length', label: 'Cancelled Members', type: 'number' } // Logic might need adjustment for nested access length
             ];
         } else {
             cols = [...baseRegColumns];

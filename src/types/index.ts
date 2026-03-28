@@ -107,10 +107,13 @@ export interface Cancellation {
     name: string;
     phone: string;
     cancelledMembers: Member[];
+    amountPaidForCancelled?: number; // Prorated amount paid for just the cancelled members
     refundAmount: number;
     refundStatus: 'pending' | 'completed';
     refundUtr?: string;
     cancelledAt: any;
+    cancellationDate?: string; // YYYY-MM-DD — user-defined cancellation date (overrides server timestamp for policy calc)
+    trainCancellationCharges?: number; // Train ticket cancellation charges deducted from refund
     remarks?: string;
     originalData?: Registration; // Snapshot of the original registration data at the time of cancellation
     refundPercentageApplied?: number;
