@@ -124,6 +124,18 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
         return calculatedNet;
     }, [useManualAmount, manualRefundAmount, calculatedNet]);
 
+    // When in manual override mode, keep the net refund in sync if train charges or paid amount changes.
+    // The stored % is the gross %; train charges are always deducted on top of it.
+    useEffect(() => {
+        if (!useManualAmount) return;
+        const pct = parseFloat(manualRefundPercent);
+        if (isNaN(pct) || pct <= 0) return;
+        const paid = parseFloat(amountPaidForCancelled) || 0;
+        const train = parseFloat(trainCharges) || 0;
+        const newNet = Math.max(0, Math.floor(paid * pct / 100) - train);
+        setManualRefundAmount(String(newNet));
+    }, [trainCharges, amountPaidForCancelled, useManualAmount]); // intentionally NOT including manualRefundPercent to avoid loops
+
     if (!isOpen || !cancellation) return null;
 
     const handleSave = async () => {
