@@ -50,6 +50,39 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
             );
         }
 
+        // Special key: show paid / total for cancelled registration
+        if (col.key === 'originalData_paidVsTotal') {
+            const orig = row.originalData;
+            // Paid amount for cancelled members
+            let paid: number;
+            if (typeof row.amountPaidForCancelled === 'number') {
+                paid = row.amountPaidForCancelled;
+            } else if (orig) {
+                const totalPaid = orig?.paymentDetails?.amountPaid ?? (orig as any)?.amountPaid ?? orig?.totalAmount ?? 0;
+                const totalMembers = orig?.members?.length || 1;
+                const cancelledCount = row.cancelledMembers?.length || 1;
+                paid = Math.round((totalPaid / totalMembers) * cancelledCount);
+            } else {
+                paid = 0;
+            }
+            // Total (contract) amount for cancelled members
+            let total: number;
+            if (orig) {
+                const origTotal = orig?.paymentDetails?.totalAmount ?? orig?.totalAmount ?? 0;
+                const totalMembers = orig?.members?.length || 1;
+                const cancelledCount = row.cancelledMembers?.length || 1;
+                total = Math.round((origTotal / totalMembers) * cancelledCount);
+            } else {
+                total = paid;
+            }
+            return (
+                <div className="flex flex-col leading-tight">
+                    <span className="font-mono font-medium text-emerald-400">₹{paid.toLocaleString('en-IN')}</span>
+                    <span className="font-mono text-xs text-gray-500">/ ₹{total.toLocaleString('en-IN')}</span>
+                </div>
+            );
+        }
+
         // Special key: number of cancelled members
         if (col.key === 'cancelledMembers_count') {
             const count = row.cancelledMembers?.length ?? 0;

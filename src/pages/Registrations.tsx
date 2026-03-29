@@ -91,10 +91,6 @@ export const Registrations = () => {
             const hasPackages = cancellations.some(c =>
                 c.cancelledMembers?.some((m: any) => m.packageName)
             );
-            const hasInstallments = cancellations.some(c =>
-                c.originalData?.paymentDetails?.paymentType === 'installment' ||
-                (c.originalData?.paymentDetails?.installments?.length ?? 0) > 0
-            );
 
             cols = [
                 { key: 'name', label: 'Primary Contact', type: 'text' },
@@ -104,10 +100,8 @@ export const Registrations = () => {
                 hasPackages
                     ? { key: 'cancelledMembers_packages', label: 'Cancelled Members', type: 'badge' }
                     : { key: 'cancelledMembers_count', label: 'Members', type: 'text' },
-                // Amount column — mirrors registrations tab
-                hasInstallments
-                    ? { key: 'originalData.paymentDetails.totalAmount', label: 'Total Amount', type: 'currency' }
-                    : { key: 'originalData_amountPaid', label: 'Amt Paid', type: 'text' },
+                // Amount column — always shows paid / total
+                { key: 'originalData_paidVsTotal', label: 'Paid / Total', type: 'text' },
                 // UTR of original payment
                 { key: 'originalData.paymentDetails.utrNumber', label: 'UTR/ID', type: 'text' },
                 // Which account the payment was in

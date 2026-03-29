@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Save, User, Calculator, Train, CalendarDays } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import type { Cancellation } from '../types';
 
 interface Props {
@@ -47,7 +47,9 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
             );
             setTrainCharges(String(cancellation.trainCancellationCharges ?? 0));
             // Populate amountPaidForCancelled: prefer stored field, fallback to prorating from originalData
+            let paidForCancelled = 0;
             if (typeof cancellation.amountPaidForCancelled === 'number') {
+                paidForCancelled = cancellation.amountPaidForCancelled;
                 setAmountPaidForCancelled(String(cancellation.amountPaidForCancelled));
             } else {
                 const orig = cancellation.originalData;
@@ -55,14 +57,40 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
                 const totalMembers = orig?.members?.length || cancellation.cancelledMembers?.length || 1;
                 const cancelledCount = cancellation.cancelledMembers?.length || 1;
                 const prorated = Math.round((totalPaid / totalMembers) * cancelledCount);
+                paidForCancelled = prorated;
                 setAmountPaidForCancelled(prorated > 0 ? String(prorated) : '');
             }
             setManualRefundAmount(String(cancellation.refundAmount ?? ''));
             setManualRefundPercent(String(cancellation.refundPercentageApplied ?? ''));
             setRemarks(cancellation.remarks || '');
-            setUseManualAmount(false);
+
+            // Auto-detect if a manual override was previously applied:
+            // Recalculate what the policy-based refund would be and compare with stored refundAmount.
+            // If they differ, the user must have manually overridden it previously — preserve their override.
+            const savedRefund = cancellation.refundAmount ?? 0;
+            const savedPct = cancellation.refundPercentageApplied;
+            const trainDed = cancellation.trainCancellationCharges ?? 0;
+            const cancelDateStr = cancellation.cancellationDate || toDateString(cancellation.cancelledAt);
+            const cancelDate = new Date(cancelDateStr + 'T00:00:00');
+            let policyPct = 0;
+            if (currentYatra?.policy && currentYatra.policy.length > 0) {
+                const policy = [...currentYatra.policy].sort(
+                    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+                );
+                const rule = policy.find(r => cancelDate <= new Date(r.date + 'T23:59:59'));
+                policyPct = rule ? rule.refund : 0;
+            }
+            const policyGross = Math.floor((paidForCancelled * policyPct) / 100);
+            const policyNet = Math.max(0, policyGross - trainDed);
+
+            // Enable manual override if saved values differ from policy calculation
+            const wasManuallyOverridden = (
+                (typeof savedPct === 'number' && savedPct !== policyPct) ||
+                (typeof savedRefund === 'number' && savedRefund !== policyNet)
+            );
+            setUseManualAmount(!!wasManuallyOverridden);
         }
-    }, [cancellation]);
+    }, [cancellation, currentYatra]);
 
     // Recalculate based on policy + chosen date
     const { policyPercentage, calculatedGross, calculatedNet } = useMemo(() => {
@@ -106,13 +134,17 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
                 ? getMasterApp()
                 : getDynamicApp(currentYatra.id, currentYatra.config);
 
+            const newRefundAmount = effectiveRefundAmount;
+            const oldRefundAmount = cancellation.refundAmount ?? 0;
+            const refundDelta = newRefundAmount - oldRefundAmount; // Positive = more refund, Negative = less refund
+
             const updates: Record<string, any> = {
                 refundStatus,
                 refundUtr: refundUtr.trim() || null,
                 cancellationDate,
                 trainCancellationCharges: parseFloat(trainCharges) || 0,
                 amountPaidForCancelled: parseFloat(amountPaidForCancelled) || 0,
-                refundAmount: effectiveRefundAmount,
+                refundAmount: newRefundAmount,
                 refundPercentageApplied: useManualAmount
                     ? (parseFloat(manualRefundPercent) || null)
                     : policyPercentage,
@@ -120,6 +152,33 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
             };
 
             await updateDoc(doc(db, 'cancellations', cancellation.id), updates);
+
+            // If refund amount changed, also update the original registration's amountPaid
+            // so that dashboard financials stay in sync
+            if (refundDelta !== 0 && cancellation.originalRegistrationId) {
+                try {
+                    const regRef = doc(db, 'registrations', cancellation.originalRegistrationId);
+                    const regSnap = await getDoc(regRef);
+                    if (regSnap.exists()) {
+                        const regData = regSnap.data();
+                        const hasPaymentDetails = !!regData.paymentDetails;
+                        if (hasPaymentDetails) {
+                            const currentAmountPaid = regData.paymentDetails?.amountPaid ?? 0;
+                            const newAmountPaid = Math.max(0, currentAmountPaid - refundDelta);
+                            await updateDoc(regRef, { 'paymentDetails.amountPaid': newAmountPaid });
+                        } else {
+                            // Simple yatra (Puri-style) — update top-level fields
+                            const currentTotal = regData.totalAmount ?? 0;
+                            const newTotal = Math.max(0, currentTotal - refundDelta);
+                            await updateDoc(regRef, { totalAmount: newTotal, amountPaid: newTotal });
+                        }
+                    }
+                } catch (regError) {
+                    console.warn('Could not update registration amountPaid:', regError);
+                    // Non-fatal: cancellation record is already saved correctly
+                }
+            }
+
             onClose();
         } catch (error) {
             console.error('Error updating cancellation:', error);

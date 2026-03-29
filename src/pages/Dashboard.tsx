@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useRegistrations } from '../hooks/useRegistrations';
+import { useRegistrations, useCancellations } from '../hooks/useRegistrations';
 import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -12,13 +12,15 @@ import {
     AlertCircle,
     Activity,
     Baby,
-    PersonStanding
+    PersonStanding,
+    ArrowDownLeft
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const Dashboard = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
+    const { data: cancellations = [], isLoading: isLoadingCancels } = useCancellations();
     const { members: globalMgmtMembers } = useManagementTeam();
     const { selectedIds: mgmtSelectedIds } = useYatraManagementSelection();
     const navigate = useNavigate();
@@ -35,8 +37,10 @@ export const Dashboard = () => {
         let onlineNarayanaAmount = 0;
         let cashAmount = 0;
         let totalTravellers = 0;
-        let totalRecords = registrations.length;
+        let totalRecords = 0;
         let pendingRecords = 0;
+        let totalRefunds = 0;
+        let cancelledTravellerCount = 0;
 
         let singleTravellers = 0;
         let familyGroups = 0;
@@ -52,6 +56,11 @@ export const Dashboard = () => {
             '31-50': 0, '51-60': 0, '61-70': 0, '71+': 0
         };
 
+        // Only process active (non-cancelled) registrations for traveller stats
+        const activeRegistrations = registrations.filter(r => r.status !== 'cancelled');
+        totalRecords = activeRegistrations.length;
+
+        // Process ALL registrations for financials (including cancelled ones with residual amounts)
         registrations.forEach(reg => {
             // 1. Finances
             // For yatras with installments (Hampi style), use amountPaid (actual collection).
@@ -140,7 +149,10 @@ export const Dashboard = () => {
                 pendingRecords++;
             }
 
-            // 2. Travellers
+            // Skip soft-cancelled registrations for traveller/demographic stats
+            if (reg.status === 'cancelled') return;
+
+            // 2. Travellers (only active registrations)
             const memberCount = reg.members?.length || 0;
             totalTravellers += memberCount;
 
@@ -180,6 +192,12 @@ export const Dashboard = () => {
             });
         });
 
+        // Aggregate cancellation/refund stats
+        cancellations.forEach(canc => {
+            totalRefunds += canc.refundAmount || 0;
+            cancelledTravellerCount += canc.cancelledMembers?.length || 0;
+        });
+
         return {
             totalAmount,
             onlineAmount,
@@ -195,11 +213,13 @@ export const Dashboard = () => {
             ageGroups,
             maleCount,
             femaleCount,
-            packageGenderCounts
+            packageGenderCounts,
+            totalRefunds,
+            cancelledTravellerCount
         };
-    }, [registrations, currentYatra]);
+    }, [registrations, cancellations, currentYatra]);
 
-    if (isLoading) {
+    if (isLoading || isLoadingCancels) {
         return (
             <div className="flex h-full items-center justify-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
@@ -258,8 +278,18 @@ export const Dashboard = () => {
                     icon={Banknote}
                     color="text-green-400"
                     bg="bg-green-500/10"
-                    trend="₹0 Pending"
+                    trend={stats.totalRefunds > 0 ? `After ₹${stats.totalRefunds.toLocaleString()} refunds` : '₹0 Pending'}
                 />
+                {stats.totalRefunds > 0 && (
+                    <StatsCard
+                        title="Total Refunds"
+                        value={`₹${stats.totalRefunds.toLocaleString()}`}
+                        icon={ArrowDownLeft}
+                        color="text-red-400"
+                        bg="bg-red-500/10"
+                        trend={`${stats.cancelledTravellerCount} travellers cancelled`}
+                    />
+                )}
                 <StatsCard
                     title="Online Collections"
                     value={`₹${stats.onlineAmount.toLocaleString()}`}
