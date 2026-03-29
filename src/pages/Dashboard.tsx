@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { computeAccountTotals } from '../utils/accountTotals';
 import { useNavigate } from 'react-router-dom';
 import { useRegistrations, useCancellations } from '../hooks/useRegistrations';
 import { useManagementTeam, useYatraManagementSelection } from '../hooks/useManagementTeam';
@@ -65,150 +66,63 @@ export const Dashboard = () => {
         const activeRegistrations = registrations.filter(r => r.status !== 'cancelled');
         totalRecords = activeRegistrations.length;
 
-        // --- Phase 1: Build cancellation lookup by registration ID ---
-        const cancByRegId: Record<string, typeof cancellations> = {};
+        // ============================================================
+        // FINANCIAL TOTALS — Simple 2-step approach:
+        //   1. Get per-account amounts from registrations (same logic as PaymentTracking)
+        //   2. For each cancellation, add retained amount to appropriate account
+        // ============================================================
+
+        // Step 1: Get base account amounts (EXACT same logic as PaymentTracking)
+        const baseTotals = computeAccountTotals(registrations, twoSharingPerPerson);
+        onlineChaitanyaAmount = baseTotals.chaitanya;
+        onlineNarayanaAmount = baseTotals.narayana;
+        cashAmount = baseTotals.cash;
+        onlineAmount = baseTotals.chaitanya + baseTotals.narayana + baseTotals.unassigned;
+        totalAmount = baseTotals.total;
+
+        // Step 2: Process cancellations — add retained to appropriate account
         cancellations.forEach(canc => {
-            const regId = canc.originalRegistrationId;
-            if (regId) {
-                if (!cancByRegId[regId]) cancByRegId[regId] = [];
-                cancByRegId[regId].push(canc);
-            }
             totalRefunds += canc.refundAmount || 0;
             cancelledTravellerCount += canc.cancelledMembers?.length || 0;
-        });
 
-        // --- Phase 2: Compute financial totals per registration ---
-        // For each registration, determine the ORIGINAL collected amount and the NET revenue
-        // (after subtracting any refunds from linked cancellations).
-        registrations.forEach(reg => {
-            const linkedCancels = cancByRegId[reg.id] || [];
-            const hasCancellations = linkedCancels.length > 0;
+            const retained = Math.max(0, (canc.amountPaidForCancelled || 0) - (canc.refundAmount || 0));
+            if (retained <= 0) return;
 
-            // Determine the ORIGINAL amount collected for this registration
-            // (before any cancellation-related reductions)
-            let originalPaid: number;
+            // Add retained to total and appropriate account
+            totalAmount += retained;
 
-            if (reg.status === 'cancelled' && hasCancellations) {
-                // FULLY CANCELLED: reg.amountPaid may be stale.
-                // Use the cancellation's originalData snapshot for the true original.
-                // Sort by cancelledAt to get the first (which has the unmodified snapshot)
-                const sorted = [...linkedCancels].sort((a, b) => {
-                    const ta = a.cancelledAt?.toDate?.()?.getTime?.() || a.cancelledAt || 0;
-                    const tb = b.cancelledAt?.toDate?.()?.getTime?.() || b.cancelledAt || 0;
-                    return (ta as number) - (tb as number);
-                });
-                const firstSnapshot = sorted[0].originalData;
-                originalPaid = firstSnapshot?.paymentDetails?.amountPaid
-                    ?? (firstSnapshot as any)?.amountPaid
-                    ?? firstSnapshot?.totalAmount ?? 0;
-            } else if (hasCancellations) {
-                // PARTIALLY CANCELLED and still active:
-                // reg.amountPaid may or may not be correctly reduced.
-                // Reconstruct original: current amountPaid + all refunds given back
-                const currentPaid = reg.paymentDetails
-                    ? (reg.paymentDetails.amountPaid || 0)
-                    : (reg.totalAmount || 0);
-                const totalRefunded = linkedCancels.reduce((s, c) => s + (c.refundAmount || 0), 0);
-                originalPaid = currentPaid + totalRefunded;
+            // Determine which account the original registration was in
+            const origData = canc.originalData;
+            const origUtr = origData?.utr || origData?.paymentDetails?.utrNumber || '';
+            const origIsCash = origUtr.toLowerCase().includes('cash') || origData?.paymentDetails?.assignedTo === 'cash';
+
+            if (origIsCash) {
+                cashAmount += retained;
             } else {
-                // NO CANCELLATIONS: amountPaid is the original, untouched
-                originalPaid = reg.paymentDetails
-                    ? (reg.paymentDetails.amountPaid || 0)
-                    : (reg.totalAmount || 0);
-            }
-
-            // Net revenue = originalPaid - sum of all refunds for this registration
-            const regTotalRefunds = linkedCancels.reduce((s, c) => s + (c.refundAmount || 0), 0);
-            const revenue = Math.max(0, originalPaid - regTotalRefunds);
-
-            totalAmount += revenue;
-
-            // --- Per-account assignment (uses same logic as before) ---
-            const utr = reg.utr || reg.paymentDetails?.utrNumber || '';
-            const isCash = utr.toLowerCase().includes('cash') || reg.paymentDetails?.assignedTo === 'cash';
-
-            if (isCash) {
-                cashAmount += revenue;
-            } else {
-                onlineAmount += revenue;
-
+                onlineAmount += retained;
                 let assignedTo = '';
-
-                // 1. Check direct assignment
-                if (reg.paymentDetails?.assignedTo) {
-                    assignedTo = reg.paymentDetails.assignedTo;
+                if (origData?.paymentDetails?.assignedTo) {
+                    assignedTo = origData.paymentDetails.assignedTo;
                 }
-                // 2. Check Installment assignments
-                else if (reg.paymentDetails?.installments?.length) {
-                    // For installment regs, assign each installment's amount to its account
-                    // BUT we need to consider that the TOTAL is now `revenue`, not the sum of installments.
-                    // Scale each installment proportionally to the net revenue.
-                    const installmentTotal = reg.paymentDetails.installments.reduce(
-                        (s: number, i: any) => s + (i.amount || 0), 0
-                    );
-                    const scale = installmentTotal > 0 ? revenue / installmentTotal : 0;
-
-                    reg.paymentDetails.installments.forEach((inst, idx) => {
-                        const scaledAmount = Math.round((inst.amount || 0) * scale);
-                        if (inst.assignedTo === 'chaitanya') {
-                            onlineChaitanyaAmount += scaledAmount;
-                        } else if (inst.assignedTo === 'narayana') {
-                            onlineNarayanaAmount += scaledAmount;
-                        } else {
-                            if (idx === 0) {
-                                const remarks = (reg.remarks || '').toLowerCase();
-                                if (remarks.includes('chaitanya')) onlineChaitanyaAmount += scaledAmount;
-                                else if (remarks.includes('narayana')) onlineNarayanaAmount += scaledAmount;
-                            }
-                        }
-                    });
-
-                    assignedTo = 'processed_via_installments';
+                if (!assignedTo && origData?.paymentDetails?.installments?.length) {
+                    assignedTo = origData.paymentDetails.installments[0]?.assignedTo || '';
                 }
-                else {
-                    // Fallback to Remarks
-                    const remarks = (reg.remarks || '').toLowerCase();
+                if (!assignedTo) {
+                    const remarks = (origData?.remarks || '').toLowerCase();
                     if (remarks.includes('chaitanya')) assignedTo = 'chaitanya';
                     else if (remarks.includes('narayana')) assignedTo = 'narayana';
                 }
-
-                if (assignedTo === 'chaitanya') {
-                    onlineChaitanyaAmount += revenue;
-                } else if (assignedTo === 'narayana') {
-                    onlineNarayanaAmount += revenue;
-                }
+                if (assignedTo === 'chaitanya') onlineChaitanyaAmount += retained;
+                else if (assignedTo === 'narayana') onlineNarayanaAmount += retained;
             }
+        });
 
-            // 2-Sharing Premium
-            const hasTwoSharingMembers = reg.members?.some(m => m.isTwoSharing);
-            if (hasTwoSharingMembers && twoSharingPerPerson > 0) {
-                const twoSharingCount = reg.members!.filter(m => m.isTwoSharing).length;
-                const existingTwoSharingInstallment = reg.paymentDetails?.installments?.find(i => i.name === '2 Sharing Premium');
-                if (!existingTwoSharingInstallment) {
-                    const twoSharingFee = twoSharingCount * twoSharingPerPerson;
-                    totalAmount += twoSharingFee;
-
-                    const twoSharingAssigned = (reg.paymentDetails as any)?.twoSharingAssignedTo || '';
-                    if (twoSharingAssigned === 'cash') {
-                        cashAmount += twoSharingFee;
-                    } else if (twoSharingAssigned === 'chaitanya') {
-                        onlineAmount += twoSharingFee;
-                        onlineChaitanyaAmount += twoSharingFee;
-                    } else if (twoSharingAssigned === 'narayana') {
-                        onlineAmount += twoSharingFee;
-                        onlineNarayanaAmount += twoSharingFee;
-                    }
-                }
-            }
-
+        // Traveller stats, demographics (active registrations only)
+        activeRegistrations.forEach(reg => {
             if (reg.paymentStatus === 'pending_verification' || reg.paymentDetails?.paymentStatus === 'verification_pending') {
                 pendingRecords++;
             }
 
-            // Skip soft-cancelled registrations for traveller/demographic stats
-            if (reg.status === 'cancelled') return;
-
-            // 2. Travellers (only active registrations)
             const memberCount = reg.members?.length || 0;
             totalTravellers += memberCount;
 
@@ -218,7 +132,6 @@ export const Dashboard = () => {
             const sizeKey = memberCount >= 6 ? 6 : memberCount;
             familySizeCounts[sizeKey] = (familySizeCounts[sizeKey] || 0) + 1;
 
-            // 3. Age Groups & Demographics
             reg.members?.forEach(m => {
                 const age = Number(m.age);
                 if (!isNaN(age)) {

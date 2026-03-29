@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Save, User, Calculator, Train, CalendarDays } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, runTransaction } from 'firebase/firestore';
 import type { Cancellation } from '../types';
 
 interface Props {
@@ -148,9 +148,12 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
 
             const newRefundAmount = effectiveRefundAmount;
             const oldRefundAmount = cancellation.refundAmount ?? 0;
-            const refundDelta = newRefundAmount - oldRefundAmount; // Positive = more refund, Negative = less refund
+            const refundDelta = newRefundAmount - oldRefundAmount;
 
-            const updates: Record<string, any> = {
+            const cancRef = doc(db, 'cancellations', cancellation.id);
+            const regId = cancellation.originalRegistrationId;
+
+            const cancUpdates: Record<string, any> = {
                 refundStatus,
                 refundUtr: refundUtr.trim() || null,
                 cancellationDate,
@@ -163,38 +166,43 @@ export const EditCancellationModal = ({ isOpen, onClose, cancellation }: Props) 
                 remarks: remarks.trim() || null,
             };
 
-            await updateDoc(doc(db, 'cancellations', cancellation.id), updates);
+            // Always update the cancellation record — this is the source of truth
+            // for Dashboard financial calculations.
+            // Also try to update the source registration if it exists (for partial cancellations
+            // where the registration is still active). This is best-effort.
+            if (refundDelta !== 0 && regId) {
+                await runTransaction(db, async (transaction) => {
+                    const regRef = doc(db, 'registrations', regId);
+                    const regSnap = await transaction.get(regRef);
 
-            // If refund amount changed, also update the original registration's amountPaid
-            // so that dashboard financials stay in sync
-            if (refundDelta !== 0 && cancellation.originalRegistrationId) {
-                try {
-                    const regRef = doc(db, 'registrations', cancellation.originalRegistrationId);
-                    const regSnap = await getDoc(regRef);
+                    // 1. Always update cancellation
+                    transaction.update(cancRef, cancUpdates);
+
+                    // 2. Best-effort: sync active registration's amountPaid
                     if (regSnap.exists()) {
                         const regData = regSnap.data();
-                        const hasPaymentDetails = !!regData.paymentDetails;
-                        if (hasPaymentDetails) {
-                            const currentAmountPaid = regData.paymentDetails?.amountPaid ?? 0;
-                            const newAmountPaid = Math.max(0, currentAmountPaid - refundDelta);
-                            await updateDoc(regRef, { 'paymentDetails.amountPaid': newAmountPaid });
-                        } else {
-                            // Simple yatra (Puri-style) — update top-level fields
-                            const currentTotal = regData.totalAmount ?? 0;
-                            const newTotal = Math.max(0, currentTotal - refundDelta);
-                            await updateDoc(regRef, { totalAmount: newTotal, amountPaid: newTotal });
+                        // Only update if registration is still active (not soft-cancelled)
+                        if (regData.status !== 'cancelled') {
+                            if (regData.paymentDetails) {
+                                const currentAmountPaid = regData.paymentDetails?.amountPaid ?? 0;
+                                const newAmountPaid = Math.max(0, currentAmountPaid - refundDelta);
+                                transaction.update(regRef, { 'paymentDetails.amountPaid': newAmountPaid });
+                            } else {
+                                const currentTotal = regData.totalAmount ?? 0;
+                                const newTotal = Math.max(0, currentTotal - refundDelta);
+                                transaction.update(regRef, { totalAmount: newTotal });
+                            }
                         }
                     }
-                } catch (regError) {
-                    console.warn('Could not update registration amountPaid:', regError);
-                    // Non-fatal: cancellation record is already saved correctly
-                }
+                });
+            } else {
+                await updateDoc(cancRef, cancUpdates);
             }
 
             onClose();
         } catch (error) {
             console.error('Error updating cancellation:', error);
-            alert('Failed to update cancellation.');
+            alert('Failed to update cancellation. Please try again.');
         } finally {
             setIsSaving(false);
         }
