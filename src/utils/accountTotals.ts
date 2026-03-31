@@ -1,4 +1,4 @@
-import type { Registration, Cancellation } from '../types';
+import type { Registration } from '../types';
 
 export interface AccountTotals {
     chaitanya: number;
@@ -103,7 +103,7 @@ export function computeAccountTotals(
             if (allSame) {
                 addToAccount(memberAssignments?.[0] || assigned, amount);
             } else {
-                reg.members?.forEach((m, idx) => {
+                reg.members?.forEach((m) => {
                     let mAmount = 0;
                     if (m.packagePrice) mAmount = m.packagePrice;
                     else if (reg.members.length > 0) mAmount = amount / reg.members.length;
