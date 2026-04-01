@@ -83,12 +83,43 @@ export const MergeRegistrationsModal = ({ isOpen, onClose, primaryRegistration, 
                     mergedPaymentDetails.amountPaid = (mergedPaymentDetails.amountPaid || 0) + (secondaryPD.amountPaid || 0);
                     mergedPaymentDetails.totalAmount = (mergedPaymentDetails.totalAmount || 0) + (secondaryPD.totalAmount || 0);
 
-                    // Combine installments if both have them
+                    // Merge installments by index (sum amounts) instead of concatenating
                     if (secondaryPD.installments?.length) {
-                        mergedPaymentDetails.installments = [
-                            ...(mergedPaymentDetails.installments || []),
-                            ...secondaryPD.installments
-                        ];
+                        const primaryInst = mergedPaymentDetails.installments || [];
+                        const secondaryInst = secondaryPD.installments;
+                        const maxLen = Math.max(primaryInst.length, secondaryInst.length);
+                        const merged = [];
+
+                        // Status priority for picking the "better" status
+                        const statusPriority: Record<string, number> = {
+                            'paid': 3,
+                            'verified': 3,
+                            'verification_pending': 2,
+                            'rejected': 1,
+                            'pending': 0
+                        };
+
+                        for (let i = 0; i < maxLen; i++) {
+                            const a = primaryInst[i];
+                            const b = secondaryInst[i];
+
+                            if (a && b) {
+                                // Both have this installment — sum amounts, keep best status
+                                const aStatusVal = statusPriority[a.status] ?? 0;
+                                const bStatusVal = statusPriority[b.status] ?? 0;
+                                merged.push({
+                                    ...a,
+                                    amount: (a.amount || 0) + (b.amount || 0),
+                                    status: bStatusVal > aStatusVal ? b.status : a.status,
+                                    assignedTo: a.assignedTo || b.assignedTo || null,
+                                });
+                            } else {
+                                // Only one side has this installment — keep as-is
+                                merged.push(a || b);
+                            }
+                        }
+
+                        mergedPaymentDetails.installments = merged;
                     }
 
                     // Keep payment proof from either

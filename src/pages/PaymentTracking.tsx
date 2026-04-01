@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
-import { useRegistrations } from '../hooks/useRegistrations';
+import { useRegistrations, useCancellations } from '../hooks/useRegistrations';
 import { useAppStore } from '../store/useAppStore';
 import type { Registration, Installment } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
-import { Banknote, GripVertical, Loader2, AlertCircle, Calendar, Eye, ExternalLink } from 'lucide-react';
+import { Banknote, GripVertical, Loader2, AlertCircle, Calendar, Eye, ExternalLink, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal';
+import { exportDetailedPaymentsExcel } from '../utils/detailedPaymentExport';
 
 // --- Types for the Board ---
 interface PaymentItem {
@@ -25,6 +26,7 @@ interface PaymentItem {
 export const PaymentTracking = () => {
     const { currentYatra } = useAppStore();
     const { data: registrations = [], isLoading } = useRegistrations();
+    const { data: cancellations = [] } = useCancellations();
     const [draggedItems, setDraggedItems] = useState<PaymentItem[]>([]);
     const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
     
@@ -514,7 +516,20 @@ export const PaymentTracking = () => {
                     <h1 className="text-2xl font-bold text-white">Payment Tracking</h1>
                     <p className="text-gray-400 text-sm">Drag payments to assign them to accounts.</p>
                 </div>
-                {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                <div className="flex items-center gap-3">
+                    {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                    <button
+                        onClick={() => exportDetailedPaymentsExcel(registrations, cancellations, {
+                            yatraName: currentYatra?.name || 'Yatra',
+                            twoSharingAmount: currentYatra?.config?.twoSharingAmount || 0,
+                        })}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all text-sm font-medium"
+                        title="Export detailed payments breakdown to Excel"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export Detailed Excel
+                    </button>
+                </div>
             </div>
 
             {/* Alerts Carousel */}

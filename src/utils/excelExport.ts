@@ -6,303 +6,245 @@ import { format } from 'date-fns';
 const formatDate = (value: any): string => {
     if (!value) return '';
     try {
-        // Handle Firestore Timestamp
-        if (value?.toDate) {
-            return format(value.toDate(), 'dd/MM/yyyy hh:mm a');
-        }
-        // Handle regular Date
-        if (value instanceof Date) {
-            return format(value, 'dd/MM/yyyy hh:mm a');
-        }
-        // Handle ISO string
-        if (typeof value === 'string') {
-            return format(new Date(value), 'dd/MM/yyyy hh:mm a');
-        }
-    } catch {
-        return String(value);
-    }
+        if (value?.toDate) return format(value.toDate(), 'dd/MM/yyyy hh:mm a');
+        if (value instanceof Date) return format(value, 'dd/MM/yyyy hh:mm a');
+        if (typeof value === 'string') return format(new Date(value), 'dd/MM/yyyy hh:mm a');
+    } catch { return String(value); }
     return String(value);
 };
 
-// Helper to format currency
 const formatCurrency = (value: number | undefined): string => {
     if (value === undefined || value === null) return '';
     return `₹${value.toLocaleString('en-IN')}`;
 };
 
-// Registration Export Headers
-const REGISTRATION_HEADERS = [
-    // Registration info (will be merged for multi-member registrations)
-    'Family ID',
-    'Primary Contact',
-    'Phone',
-    'Email',
-    'WhatsApp',
-    'Address',
-    // Member info (one per row)
-    'Member Name',
-    'Member Phone',
-    'Age',
-    'Gender',
-    'Package',
-    'Package Price',
-    'Room Number',
-    // Payment info (will be merged)
-    'Total Amount',
-    'Amount Paid',
-    'Payment Type',
-    'UTR/Transaction ID',
-    'Payment Status',
-    'Joined WhatsApp',
-    'Submitted At',
-    'Remarks',
+// ─── Column Definitions ────────────────────────────────────────────────────
+
+// Each column definition maps a key to how to extract data from a Registration
+interface ColumnDef {
+    key: string;
+    header: string;
+    width: number;
+    /** If true, this value is per-registration (merged across members). If false, per-member. */
+    perRegistration: boolean;
+    getValue: (reg: Registration, member?: any, memberIdx?: number) => any;
+}
+
+const REG_COLUMN_DEFS: ColumnDef[] = [
+    { key: 'familyId', header: 'Family ID', width: 15, perRegistration: true, getValue: (r) => r.familyId || r.id || '' },
+    { key: 'name', header: 'Primary Contact', width: 22, perRegistration: true, getValue: (r) => r.name || '' },
+    { key: 'phone', header: 'Phone', width: 15, perRegistration: true, getValue: (r) => r.phone || '' },
+    { key: 'email', header: 'Email', width: 25, perRegistration: true, getValue: (r) => r.email || '' },
+    { key: 'whatsapp', header: 'WhatsApp Number', width: 15, perRegistration: true, getValue: (r) => r.whatsapp || r.phone || '' },
+    { key: 'address', header: 'Address', width: 30, perRegistration: true, getValue: (r) => r.address || '' },
+    { key: 'memberName', header: 'Member Name', width: 22, perRegistration: false, getValue: (_r, m) => m?.name || '' },
+    { key: 'memberPhone', header: 'Member Phone', width: 15, perRegistration: false, getValue: (_r, m) => m?.phone || '' },
+    { key: 'memberAge', header: 'Age', width: 6, perRegistration: false, getValue: (_r, m) => m?.age || '' },
+    { key: 'memberGender', header: 'Gender', width: 8, perRegistration: false, getValue: (_r, m) => m?.gender || '' },
+    { key: 'memberPackage', header: 'Package', width: 15, perRegistration: false, getValue: (_r, m) => m?.packageName || '' },
+    { key: 'memberPackagePrice', header: 'Package Price', width: 13, perRegistration: false, getValue: (_r, m) => m?.packagePrice ? formatCurrency(m.packagePrice) : '' },
+    { key: 'memberRoomNumber', header: 'Room Number', width: 12, perRegistration: false, getValue: (_r, m) => m?.roomNumber || '' },
+    { key: 'memberIsTwoSharing', header: '2-Sharing', width: 10, perRegistration: false, getValue: (_r, m) => m?.isTwoSharing ? 'Yes' : 'No' },
+    { key: 'memberIsManagement', header: 'Management', width: 12, perRegistration: false, getValue: (_r, m) => m?.isManagement ? 'Yes' : 'No' },
+    { key: 'totalAmount', header: 'Total Amount', width: 13, perRegistration: true, getValue: (r) => formatCurrency(r.totalAmount || r.paymentDetails?.totalAmount) },
+    { key: 'amountPaid', header: 'Amount Paid', width: 13, perRegistration: true, getValue: (r) => formatCurrency(r.paymentDetails?.amountPaid || r.totalAmount) },
+    { key: 'paymentType', header: 'Payment Type', width: 13, perRegistration: true, getValue: (r) => r.paymentDetails?.paymentType || 'full' },
+    { key: 'utr', header: 'UTR/Transaction ID', width: 20, perRegistration: true, getValue: (r) => r.utr || r.paymentDetails?.utrNumber || '' },
+    { key: 'paymentStatus', header: 'Payment Status', width: 18, perRegistration: true, getValue: (r) => r.paymentStatus || r.paymentDetails?.paymentStatus || '' },
+    {
+        key: 'account', header: 'Assigned Account', width: 16, perRegistration: true,
+        getValue: (r) => {
+            if (r.paymentDetails?.assignedTo) return r.paymentDetails.assignedTo;
+            if (r.paymentDetails?.installments?.length) {
+                const first = r.paymentDetails.installments.find(i => i.assignedTo);
+                if (first?.assignedTo) return first.assignedTo;
+            }
+            const rem = (r.remarks || '').toLowerCase();
+            if (rem.includes('chaitanya')) return 'chaitanya';
+            if (rem.includes('narayana')) return 'narayana';
+            return '';
+        }
+    },
+    { key: 'joinedWhatsapp', header: 'Joined WhatsApp', width: 15, perRegistration: true, getValue: (r) => {
+        const raw = r.joinedWhatsapp;
+        return String(raw).toLowerCase() === 'yes' ? 'Yes' : 'No';
+    }},
+    { key: 'submittedAt', header: 'Submitted At', width: 20, perRegistration: true, getValue: (r) => formatDate(r.submittedAt) },
+    { key: 'remarks', header: 'Remarks', width: 25, perRegistration: true, getValue: (r) => r.remarks || '' },
 ];
 
-// Cancellation Export Headers
-const CANCELLATION_HEADERS = [
-    'Original Reg ID',
-    'Primary Contact',
-    'Phone',
-    // Member info (one per row)
-    'Cancelled Member Name',
-    'Age',
-    'Gender',
-    'Package',
-    // Refund info (will be merged)
-    'Refund Amount',
-    'Refund Status',
-    'Refund UTR',
-    'Refund % Applied',
-    'Cancelled At',
-    'Remarks',
+// ─── Cancellation Column Definitions ────────────────────────────────────────
+
+interface CancColumnDef {
+    key: string;
+    header: string;
+    width: number;
+    perCancellation: boolean;
+    getValue: (canc: Cancellation, member?: any) => any;
+}
+
+const CANC_COLUMN_DEFS: CancColumnDef[] = [
+    { key: 'originalId', header: 'Original Reg ID', width: 16, perCancellation: true, getValue: (c) => c.originalRegistrationId || '' },
+    { key: 'name', header: 'Primary Contact', width: 22, perCancellation: true, getValue: (c) => c.name || '' },
+    { key: 'phone', header: 'Phone', width: 15, perCancellation: true, getValue: (c) => c.phone || '' },
+    { key: 'memberName', header: 'Cancelled Member Name', width: 22, perCancellation: false, getValue: (_c, m) => m?.name || '' },
+    { key: 'memberAge', header: 'Age', width: 6, perCancellation: false, getValue: (_c, m) => m?.age || '' },
+    { key: 'memberGender', header: 'Gender', width: 8, perCancellation: false, getValue: (_c, m) => m?.gender || '' },
+    { key: 'memberPackage', header: 'Package', width: 15, perCancellation: false, getValue: (_c, m) => m?.packageName || '' },
+    { key: 'amountPaidForCancelled', header: 'Amount Paid', width: 13, perCancellation: true, getValue: (c) => formatCurrency(c.amountPaidForCancelled || 0) },
+    { key: 'refundAmount', header: 'Refund Amount', width: 13, perCancellation: true, getValue: (c) => formatCurrency(c.refundAmount) },
+    { key: 'refundStatus', header: 'Refund Status', width: 14, perCancellation: true, getValue: (c) => c.refundStatus || '' },
+    { key: 'refundUtr', header: 'Refund UTR', width: 20, perCancellation: true, getValue: (c) => c.refundUtr || '' },
+    { key: 'refundPercentage', header: 'Refund % Applied', width: 12, perCancellation: true, getValue: (c) => c.refundPercentageApplied ? `${c.refundPercentageApplied}%` : '' },
+    { key: 'trainCancellationCharges', header: 'Train Charges', width: 13, perCancellation: true, getValue: (c) => formatCurrency(c.trainCancellationCharges || 0) },
+    {
+        key: 'account', header: 'Original Account', width: 16, perCancellation: true,
+        getValue: (c) => {
+            const o = c.originalData;
+            if (!o) return '';
+            if (o.paymentDetails?.assignedTo) return o.paymentDetails.assignedTo;
+            if (o.paymentDetails?.installments?.length) {
+                const f = o.paymentDetails.installments.find((i: any) => i.assignedTo);
+                if (f?.assignedTo) return f.assignedTo;
+            }
+            const rem = (o.remarks || '').toLowerCase();
+            if (rem.includes('chaitanya')) return 'chaitanya';
+            if (rem.includes('narayana')) return 'narayana';
+            return '';
+        }
+    },
+    { key: 'cancelledAt', header: 'Cancelled At', width: 20, perCancellation: true, getValue: (c) => formatDate(c.cancelledAt) },
+    { key: 'remarks', header: 'Remarks', width: 25, perCancellation: true, getValue: (c) => c.remarks || '' },
 ];
+
+// ─── Export Options ────────────────────────────────────────────────────────
 
 interface ExportOptions {
     filename?: string;
     sheetName?: string;
+    selectedColumns?: string[]; // If provided, only these column keys are exported
 }
 
-/**
- * Export registrations to Excel with proper formatting and cell merging for grouped data
- */
+// ─── Registration Export ────────────────────────────────────────────────────
+
 export const exportRegistrationsToExcel = (
     registrations: Registration[],
     options: ExportOptions = {}
 ) => {
-    const { filename = 'registrations_export', sheetName = 'Registrations' } = options;
+    const { filename = 'registrations_export', sheetName = 'Registrations', selectedColumns } = options;
 
-    // Build the data array with merged cells info
+    // Filter to selected columns (or all if none specified)
+    const activeCols = selectedColumns
+        ? REG_COLUMN_DEFS.filter(c => selectedColumns.includes(c.key))
+        : REG_COLUMN_DEFS;
+
     const data: any[][] = [];
     const merges: XLSX.Range[] = [];
 
-    // Add headers
-    data.push(REGISTRATION_HEADERS);
+    // Headers
+    data.push(activeCols.map(c => c.header));
 
-    let currentRow = 1; // Start after header row (0-indexed)
+    let currentRow = 1;
 
-    registrations.forEach((reg) => {
+    registrations.forEach(reg => {
         const memberCount = Math.max(reg.members?.length || 1, 1);
         const startRow = currentRow;
 
-        // Common registration data (to be merged across member rows)
-        const commonData = {
-            familyId: reg.familyId || reg.id || '',
-            name: reg.name || '',
-            phone: reg.phone || '',
-            email: reg.email || '',
-            whatsapp: reg.whatsapp || reg.phone || '',
-            address: reg.address || '',
-            totalAmount: formatCurrency(reg.totalAmount || reg.paymentDetails?.totalAmount),
-            amountPaid: formatCurrency(reg.paymentDetails?.amountPaid || reg.totalAmount),
-            paymentType: reg.paymentDetails?.paymentType || 'full',
-            utr: reg.utr || reg.paymentDetails?.utrNumber || '',
-            paymentStatus: reg.paymentStatus || reg.paymentDetails?.paymentStatus || '',
-            joinedWhatsapp: reg.joinedWhatsapp || 'no',
-            submittedAt: formatDate(reg.submittedAt),
-            remarks: reg.remarks || '',
-        };
-
-        // Add a row for each member
         if (reg.members && reg.members.length > 0) {
             reg.members.forEach((member, idx) => {
-                const row = [
-                    idx === 0 ? commonData.familyId : '',
-                    idx === 0 ? commonData.name : '',
-                    idx === 0 ? commonData.phone : '',
-                    idx === 0 ? commonData.email : '',
-                    idx === 0 ? commonData.whatsapp : '',
-                    idx === 0 ? commonData.address : '',
-                    // Member data
-                    member.name || '',
-                    member.phone || '',
-                    member.age || '',
-                    member.gender || '',
-                    member.packageName || '',
-                    member.packagePrice ? formatCurrency(member.packagePrice) : '',
-                    member.roomNumber || '',
-                    // Payment data
-                    idx === 0 ? commonData.totalAmount : '',
-                    idx === 0 ? commonData.amountPaid : '',
-                    idx === 0 ? commonData.paymentType : '',
-                    idx === 0 ? commonData.utr : '',
-                    idx === 0 ? commonData.paymentStatus : '',
-                    idx === 0 ? commonData.joinedWhatsapp : '',
-                    idx === 0 ? commonData.submittedAt : '',
-                    idx === 0 ? commonData.remarks : '',
-                ];
+                const row: any[] = [];
+                activeCols.forEach(colDef => {
+                    if (colDef.perRegistration) {
+                        row.push(idx === 0 ? colDef.getValue(reg) : '');
+                    } else {
+                        row.push(colDef.getValue(reg, member, idx));
+                    }
+                });
                 data.push(row);
             });
         } else {
-            // No members, add single row
-            const row = [
-                commonData.familyId,
-                commonData.name,
-                commonData.phone,
-                commonData.email,
-                commonData.whatsapp,
-                commonData.address,
-                '', '', '', '', '', '', '', // Empty member columns (includes phone)
-                commonData.totalAmount,
-                commonData.amountPaid,
-                commonData.paymentType,
-                commonData.utr,
-                commonData.paymentStatus,
-                commonData.joinedWhatsapp,
-                commonData.submittedAt,
-                commonData.remarks,
-            ];
+            const row: any[] = [];
+            activeCols.forEach(colDef => {
+                row.push(colDef.perRegistration ? colDef.getValue(reg) : '');
+            });
             data.push(row);
         }
 
-        // Add merge ranges for multi-member registrations
+        // Merge per-registration columns across member rows
         if (memberCount > 1) {
-            // Columns to merge: 0-5 (registration info) and 13-20 (payment info)
-            const mergeColumns = [0, 1, 2, 3, 4, 5, 13, 14, 15, 16, 17, 18, 19, 20];
-            mergeColumns.forEach(col => {
-                merges.push({
-                    s: { r: startRow, c: col },
-                    e: { r: startRow + memberCount - 1, c: col }
-                });
+            activeCols.forEach((colDef, colIdx) => {
+                if (colDef.perRegistration) {
+                    merges.push({
+                        s: { r: startRow, c: colIdx },
+                        e: { r: startRow + memberCount - 1, c: colIdx }
+                    });
+                }
             });
         }
 
         currentRow += memberCount;
     });
 
-    // Create workbook and worksheet
     const ws = XLSX.utils.aoa_to_sheet(data);
-
-    // Apply merges
     ws['!merges'] = merges;
-
-    // Set column widths
-    ws['!cols'] = [
-        { wch: 15 }, // Family ID
-        { wch: 20 }, // Primary Contact
-        { wch: 15 }, // Phone
-        { wch: 25 }, // Email
-        { wch: 15 }, // WhatsApp
-        { wch: 30 }, // Address
-        { wch: 20 }, // Member Name
-        { wch: 15 }, // Member Phone
-        { wch: 6 },  // Age
-        { wch: 8 },  // Gender
-        { wch: 15 }, // Package
-        { wch: 12 }, // Package Price
-        { wch: 12 }, // Room Number
-        { wch: 12 }, // Total Amount
-        { wch: 12 }, // Amount Paid
-        { wch: 12 }, // Payment Type
-        { wch: 20 }, // UTR
-        { wch: 18 }, // Payment Status
-        { wch: 15 }, // Joined WhatsApp
-        { wch: 20 }, // Submitted At
-        { wch: 25 }, // Remarks
-    ];
+    ws['!cols'] = activeCols.map(c => ({ wch: c.width }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-    // Generate and download
     XLSX.writeFile(wb, `${filename}.xlsx`);
 };
 
-/**
- * Export cancellations to Excel with proper formatting
- */
+// ─── Cancellation Export ────────────────────────────────────────────────────
+
 export const exportCancellationsToExcel = (
     cancellations: Cancellation[],
     options: ExportOptions = {}
 ) => {
-    const { filename = 'cancellations_export', sheetName = 'Cancellations' } = options;
+    const { filename = 'cancellations_export', sheetName = 'Cancellations', selectedColumns } = options;
+
+    const activeCols = selectedColumns
+        ? CANC_COLUMN_DEFS.filter(c => selectedColumns.includes(c.key))
+        : CANC_COLUMN_DEFS;
 
     const data: any[][] = [];
     const merges: XLSX.Range[] = [];
 
-    // Add headers
-    data.push(CANCELLATION_HEADERS);
+    data.push(activeCols.map(c => c.header));
 
     let currentRow = 1;
 
-    cancellations.forEach((canc) => {
+    cancellations.forEach(canc => {
         const memberCount = Math.max(canc.cancelledMembers?.length || 1, 1);
         const startRow = currentRow;
 
-        const commonData = {
-            originalId: canc.originalRegistrationId || '',
-            name: canc.name || '',
-            phone: canc.phone || '',
-            refundAmount: formatCurrency(canc.refundAmount),
-            refundStatus: canc.refundStatus || '',
-            refundUtr: canc.refundUtr || '',
-            refundPercentage: canc.refundPercentageApplied ? `${canc.refundPercentageApplied}%` : '',
-            cancelledAt: formatDate(canc.cancelledAt),
-            remarks: canc.remarks || '',
-        };
-
         if (canc.cancelledMembers && canc.cancelledMembers.length > 0) {
             canc.cancelledMembers.forEach((member, idx) => {
-                const row = [
-                    idx === 0 ? commonData.originalId : '',
-                    idx === 0 ? commonData.name : '',
-                    idx === 0 ? commonData.phone : '',
-                    member.name || '',
-                    member.age || '',
-                    member.gender || '',
-                    member.packageName || '',
-                    idx === 0 ? commonData.refundAmount : '',
-                    idx === 0 ? commonData.refundStatus : '',
-                    idx === 0 ? commonData.refundUtr : '',
-                    idx === 0 ? commonData.refundPercentage : '',
-                    idx === 0 ? commonData.cancelledAt : '',
-                    idx === 0 ? commonData.remarks : '',
-                ];
+                const row: any[] = [];
+                activeCols.forEach(colDef => {
+                    if (colDef.perCancellation) {
+                        row.push(idx === 0 ? colDef.getValue(canc) : '');
+                    } else {
+                        row.push(colDef.getValue(canc, member));
+                    }
+                });
                 data.push(row);
             });
         } else {
-            const row = [
-                commonData.originalId,
-                commonData.name,
-                commonData.phone,
-                '', '', '', '', // Empty member columns
-                commonData.refundAmount,
-                commonData.refundStatus,
-                commonData.refundUtr,
-                commonData.refundPercentage,
-                commonData.cancelledAt,
-                commonData.remarks,
-            ];
+            const row: any[] = [];
+            activeCols.forEach(colDef => {
+                row.push(colDef.perCancellation ? colDef.getValue(canc) : '');
+            });
             data.push(row);
         }
 
         if (memberCount > 1) {
-            // Merge columns: 0-2 (contact info) and 7-12 (refund info)
-            const mergeColumns = [0, 1, 2, 7, 8, 9, 10, 11, 12];
-            mergeColumns.forEach(col => {
-                merges.push({
-                    s: { r: startRow, c: col },
-                    e: { r: startRow + memberCount - 1, c: col }
-                });
+            activeCols.forEach((colDef, colIdx) => {
+                if (colDef.perCancellation) {
+                    merges.push({
+                        s: { r: startRow, c: colIdx },
+                        e: { r: startRow + memberCount - 1, c: colIdx }
+                    });
+                }
             });
         }
 
@@ -311,45 +253,19 @@ export const exportCancellationsToExcel = (
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!merges'] = merges;
-
-    ws['!cols'] = [
-        { wch: 15 }, // Original Reg ID
-        { wch: 20 }, // Primary Contact
-        { wch: 15 }, // Phone
-        { wch: 20 }, // Member Name
-        { wch: 6 },  // Age
-        { wch: 8 },  // Gender
-        { wch: 15 }, // Package
-        { wch: 12 }, // Refund Amount
-        { wch: 12 }, // Refund Status
-        { wch: 20 }, // Refund UTR
-        { wch: 10 }, // Refund %
-        { wch: 20 }, // Cancelled At
-        { wch: 25 }, // Remarks
-    ];
+    ws['!cols'] = activeCols.map(c => ({ wch: c.width }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
     XLSX.writeFile(wb, `${filename}.xlsx`);
 };
 
-// Rooms Export Headers
+// ─── Room Export (unchanged) ────────────────────────────────────────────────
+
 const ROOM_HEADERS = [
-    'Room Number',
-    'Room Type',
-    // Member info
-    'Member Name',
-    'Age',
-    'Gender',
-    'Phone',
-    'Package',
-    'Special', // Mgmt/Senior
+    'Room Number', 'Room Type', 'Member Name', 'Age', 'Gender', 'Phone', 'Package', 'Special',
 ];
 
-/**
- * Export room allotments to Excel with proper formatting and cell merging for grouped data
- */
 export const exportRoomsToExcel = (
     assignedRooms: Array<{ roomNumber: string; members: any[]; isTwoSharingRoom: boolean }>,
     options: ExportOptions = {}
@@ -358,16 +274,12 @@ export const exportRoomsToExcel = (
 
     const data: any[][] = [];
     const merges: XLSX.Range[] = [];
-
-    // Add headers
     data.push(ROOM_HEADERS);
-
     let currentRow = 1;
 
-    assignedRooms.forEach((room) => {
+    assignedRooms.forEach(room => {
         const memberCount = Math.max(room.members?.length || 1, 1);
         const startRow = currentRow;
-
         const roomType = room.isTwoSharingRoom ? '2 Sharing' : 'Standard';
 
         if (room.members && room.members.length > 0) {
@@ -377,59 +289,32 @@ export const exportRoomsToExcel = (
                 const specialTags = [];
                 if (member.isManagement) specialTags.push('MGMT');
                 if (isSenior && !member.isManagement) specialTags.push('SENIOR');
-
-                const row = [
+                data.push([
                     idx === 0 ? room.roomNumber : '',
                     idx === 0 ? roomType : '',
-                    member.name || '',
-                    member.age || '',
-                    member.gender || '',
-                    member.phone || '',
-                    member.packageName || '',
-                    specialTags.join(', '),
-                ];
-                data.push(row);
+                    member.name || '', member.age || '', member.gender || '',
+                    member.phone || '', member.packageName || '', specialTags.join(', '),
+                ]);
             });
         } else {
-            // Empty room
-            const row = [
-                room.roomNumber,
-                roomType,
-                '', '', '', '', '', ''
-            ];
-            data.push(row);
+            data.push([room.roomNumber, roomType, '', '', '', '', '', '']);
         }
 
         if (memberCount > 1) {
-            // Merge columns: 0 (Room Number) and 1 (Room Type)
-            const mergeColumns = [0, 1];
-            mergeColumns.forEach(col => {
-                merges.push({
-                    s: { r: startRow, c: col },
-                    e: { r: startRow + memberCount - 1, c: col }
-                });
+            [0, 1].forEach(col => {
+                merges.push({ s: { r: startRow, c: col }, e: { r: startRow + memberCount - 1, c: col } });
             });
         }
-
         currentRow += memberCount;
     });
 
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!merges'] = merges;
-
     ws['!cols'] = [
-        { wch: 15 }, // Room Number
-        { wch: 15 }, // Room Type
-        { wch: 25 }, // Member Name
-        { wch: 6 },  // Age
-        { wch: 8 },  // Gender
-        { wch: 15 }, // Phone
-        { wch: 15 }, // Package
-        { wch: 15 }, // Special
+        { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 6 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
     ];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
     XLSX.writeFile(wb, `${filename}.xlsx`);
 };

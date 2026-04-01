@@ -12,6 +12,8 @@ import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal
 import { UndoCancellationModal } from '../components/UndoCancellationModal';
 import { EditCancellationModal } from '../components/EditCancellationModal';
 import { MergeRegistrationsModal } from '../components/MergeRegistrationsModal';
+import { ExportColumnsModal } from '../components/ExportColumnsModal';
+import { TableFilters, applyFilters, type FilterRule } from '../components/TableFilters';
 import { exportRegistrationsToExcel, exportCancellationsToExcel } from '../utils/excelExport';
 
 export const Registrations = () => {
@@ -25,6 +27,7 @@ export const Registrations = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [whatsappFilter, setWhatsappFilter] = useState('all');
+    const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
 
     // Modals State
     const [selectedReg, setSelectedReg] = useState<Registration | null>(null);
@@ -39,6 +42,7 @@ export const Registrations = () => {
     const [isUndoModalOpen, setIsUndoModalOpen] = useState(false);
     const [isEditCancellationModalOpen, setIsEditCancellationModalOpen] = useState(false);
     const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
     // Filter Logic
     const filteredData = useMemo(() => {
@@ -78,6 +82,12 @@ export const Registrations = () => {
             return matchesField || matchesMember;
         });
     }, [viewMode, registrations, cancellations, searchQuery, statusFilter, whatsappFilter, paymentMode]);
+
+    // Apply custom column filters on top of basic filters
+    const fullyFilteredData = useMemo(() => {
+        if (filterRules.length === 0) return filteredData;
+        return filteredData.filter((item: any) => applyFilters(item, filterRules));
+    }, [filteredData, filterRules]);
 
 
     // Columns Logic
@@ -157,19 +167,21 @@ export const Registrations = () => {
         }
     };
 
-    const handleExport = (data: any[]) => {
+    const handleExport = (selectedColumnKeys: string[]) => {
         const yatraName = currentYatra?.name?.replace(/\s+/g, '_') || 'yatra';
         const timestamp = new Date().toISOString().split('T')[0];
 
         if (viewMode === 'registrations') {
-            exportRegistrationsToExcel(data as Registration[], {
+            exportRegistrationsToExcel(fullyFilteredData as Registration[], {
                 filename: `${yatraName}_registrations_${timestamp}`,
-                sheetName: 'Registrations'
+                sheetName: 'Registrations',
+                selectedColumns: selectedColumnKeys,
             });
         } else {
-            exportCancellationsToExcel(data as Cancellation[], {
+            exportCancellationsToExcel(fullyFilteredData as Cancellation[], {
                 filename: `${yatraName}_cancellations_${timestamp}`,
-                sheetName: 'Cancellations'
+                sheetName: 'Cancellations',
+                selectedColumns: selectedColumnKeys,
             });
         }
     };
@@ -287,20 +299,33 @@ export const Registrations = () => {
                     )}
 
                     <button
-                        onClick={() => handleExport(filteredData)}
-                        className="p-2 bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white rounded-lg transition-colors border border-green-500/30"
-                        title="Export CSV"
+                        onClick={() => setIsExportModalOpen(true)}
+                        className="flex items-center gap-2 px-3 py-2 bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white rounded-lg transition-colors border border-green-500/30 text-sm font-medium"
+                        title="Export to Excel"
                     >
-                        <Download className="w-5 h-5" />
+                        <Download className="w-4 h-4" />
+                        Export
                     </button>
                 </div>
             </div>
+
+            {/* Column Filters */}
+            {viewMode === 'registrations' && (
+                <TableFilters rules={filterRules} onChange={setFilterRules} />
+            )}
+
+            {/* Result count */}
+            {(filterRules.length > 0 || searchQuery || statusFilter !== 'all' || whatsappFilter !== 'all' || paymentMode !== 'all') && (
+                <div className="text-xs text-gray-500 px-1">
+                    Showing {fullyFilteredData.length} of {viewMode === 'registrations' ? registrations.filter(r => r.status !== 'cancelled').length : cancellations.length} records
+                </div>
+            )}
 
             {/* Table */}
             <div className="min-h-[400px]">
                 <DynamicTable
                     columns={columns}
-                    data={filteredData as any}
+                    data={fullyFilteredData as any}
                     isLoading={viewMode === 'registrations' ? isLoadingRegs : isLoadingCancels}
                     onRowClick={(item) => handleAction(viewMode === 'registrations' ? 'view' : 'edit', item)}
                     onAction={(action, item) => handleAction(action, item)}
@@ -356,6 +381,14 @@ export const Registrations = () => {
                 primaryRegistration={selectedReg}
                 allRegistrations={registrations}
                 onSuccess={() => setSelectedReg(null)}
+            />
+
+            <ExportColumnsModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                onExport={handleExport}
+                mode={viewMode}
+                recordCount={fullyFilteredData.length}
             />
         </div>
     );
