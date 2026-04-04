@@ -1,6 +1,6 @@
 import type { GridColumn, Registration } from '../types';
 import { cn } from '../lib/utils';
-import { BadgeCheck, Clock, AlertCircle, RefreshCcw, Eye, Edit, Ban, Trash2, RotateCcw, GitMerge } from 'lucide-react';
+import { BadgeCheck, Clock, AlertCircle, RefreshCcw, Eye, Edit, Ban, Trash2, RotateCcw, GitMerge, Link2 } from 'lucide-react';
 
 interface Props {
     columns: GridColumn[];
@@ -241,6 +241,19 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
             return <span className="text-gray-600 font-mono text-xs">-</span>;
         }
 
+        // Show family link badge for name column
+        if (col.key === 'name' && row.familyGroupId) {
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="text-gray-300 font-medium">{value?.toString() || '-'}</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-full border border-emerald-500/20 flex-shrink-0" title="Linked as family group">
+                        <Link2 className="w-2.5 h-2.5" />
+                        Family
+                    </span>
+                </div>
+            );
+        }
+
         return <span className="text-gray-300 font-medium">{value?.toString() || '-'}</span>;
     };
 
@@ -300,8 +313,21 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
                                                             <button type="button" onClick={(e) => { e.stopPropagation(); onAction('edit', row); }} className="p-1.5 rounded-md text-gray-400 hover:bg-white/10 hover:text-white transition-colors" title="Edit">
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
-                                                            <button type="button" onClick={(e) => { e.stopPropagation(); onAction('merge', row); }} className="p-1.5 rounded-md text-indigo-400 hover:bg-indigo-500/10 transition-colors" title="Merge with another registration">
-                                                                <GitMerge className="w-4 h-4" />
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => { e.stopPropagation(); onAction('merge', row); }}
+                                                                className={cn(
+                                                                    "p-1.5 rounded-md transition-colors relative",
+                                                                    row.familyGroupId
+                                                                        ? "text-emerald-300 bg-emerald-500/20 ring-1 ring-emerald-400/40 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                                                                        : "text-indigo-400 hover:bg-indigo-500/10"
+                                                                )}
+                                                                title={row.familyGroupId ? "Linked as family — click to manage" : "Link with another registration as family"}
+                                                            >
+                                                                {row.familyGroupId
+                                                                    ? <Link2 className="w-4 h-4" />
+                                                                    : <GitMerge className="w-4 h-4" />
+                                                                }
                                                             </button>
                                                             <button type="button" onClick={(e) => { e.stopPropagation(); onAction('cancel', row); }} className="p-1.5 rounded-md text-orange-400 hover:bg-orange-500/10 transition-colors" title="Cancel/Refund">
                                                                 <Ban className="w-4 h-4" />

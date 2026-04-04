@@ -100,7 +100,7 @@ export const RoomAllotment = () => {
                         registrationId: reg.id,
                         memberIndex: idx,
                         primaryContactName: reg.name,
-                        familyId: reg.familyId || reg.id
+                        familyId: reg.familyGroupId || reg.familyId || reg.id
                     });
                 });
             }
@@ -151,18 +151,22 @@ export const RoomAllotment = () => {
             isTwoSharingRoom: members.some(m => m.isTwoSharing)
         })).sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true }));
 
-        // Group normal unassigned by Family/Registration
+        // Group normal unassigned by Family (uses familyGroupId when linked)
         const groupedUnassigned: Record<string, { registrationId: string; primaryContactName: string; familyId: string; members: MemberItem[] }> = {};
         unassignedNormalList.forEach(m => {
-            if (!groupedUnassigned[m.registrationId]) {
-                groupedUnassigned[m.registrationId] = {
+            const groupKey = m.familyId; // familyId already incorporates familyGroupId from allMembers
+            if (!groupedUnassigned[groupKey]) {
+                groupedUnassigned[groupKey] = {
                     registrationId: m.registrationId,
                     primaryContactName: m.primaryContactName,
                     familyId: m.familyId,
                     members: []
                 };
+            } else if (!groupedUnassigned[groupKey].primaryContactName.includes(m.primaryContactName)) {
+                // Append contact name for linked families from different registrations
+                groupedUnassigned[groupKey].primaryContactName += ` + ${m.primaryContactName}`;
             }
-            groupedUnassigned[m.registrationId].members.push(m);
+            groupedUnassigned[groupKey].members.push(m);
         });
         const unassignedGroups = Object.values(groupedUnassigned);
 

@@ -94,6 +94,7 @@ export interface Registration {
 
     // Metadata
     familyId?: string;
+    familyGroupId?: string; // Shared ID linking registrations as a family group (non-destructive merge)
     screenshotUrl?: string;
 
     // Merge tracking

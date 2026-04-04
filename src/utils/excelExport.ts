@@ -32,6 +32,7 @@ interface ColumnDef {
 
 const REG_COLUMN_DEFS: ColumnDef[] = [
     { key: 'familyId', header: 'Family ID', width: 15, perRegistration: true, getValue: (r) => r.familyId || r.id || '' },
+    { key: 'familyGroupId', header: 'Family Group', width: 15, perRegistration: true, getValue: (r) => r.familyGroupId || '' },
     { key: 'name', header: 'Primary Contact', width: 22, perRegistration: true, getValue: (r) => r.name || '' },
     { key: 'phone', header: 'Phone', width: 15, perRegistration: true, getValue: (r) => r.phone || '' },
     { key: 'email', header: 'Email', width: 25, perRegistration: true, getValue: (r) => r.email || '' },
@@ -146,7 +147,17 @@ export const exportRegistrationsToExcel = (
 
     let currentRow = 1;
 
-    registrations.forEach(reg => {
+    // Sort by familyGroupId so linked families are adjacent in the export
+    const sortedRegistrations = [...registrations].sort((a, b) => {
+        const aGroup = a.familyGroupId || '';
+        const bGroup = b.familyGroupId || '';
+        if (aGroup && bGroup) return aGroup.localeCompare(bGroup);
+        if (aGroup) return -1;
+        if (bGroup) return 1;
+        return 0;
+    });
+
+    sortedRegistrations.forEach(reg => {
         const memberCount = Math.max(reg.members?.length || 1, 1);
         const startRow = currentRow;
 
