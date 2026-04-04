@@ -4,7 +4,7 @@ import { useAppStore } from '../store/useAppStore';
 import type { Registration, Installment } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getDynamicApp, getMasterApp } from '../services/firebase';
-import { Banknote, GripVertical, Loader2, AlertCircle, Calendar, Eye, ExternalLink, Download } from 'lucide-react';
+import { Banknote, GripVertical, Loader2, AlertCircle, Calendar, Eye, ExternalLink, Download, Search, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal';
 import { exportDetailedPaymentsExcel } from '../utils/detailedPaymentExport';
@@ -40,6 +40,7 @@ export const PaymentTracking = () => {
 
     // For highlighting effect
     const [highlightedId, setHighlightedId] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const handleViewDetails = (reg: Registration) => {
         setSelectedRegistration(reg);
@@ -209,9 +210,37 @@ export const PaymentTracking = () => {
         return list;
     }, [registrations, currentYatra]);
 
+    // --- Search Filter Logic ---
+    const filteredItems = useMemo(() => {
+        if (!searchQuery.trim()) return items;
+        const q = searchQuery.toLowerCase().trim();
+        return items.filter(item => {
+            const reg = item.originalData;
+            // Search across all relevant fields
+            const searchableFields = [
+                item.name,
+                reg.name,
+                reg.phone,
+                reg.email,
+                reg.remarks,
+                reg.paymentDetails?.utrNumber,
+                reg.utr,
+                (item.installmentData as any)?.utrNumber,
+                item.status,
+                item.assignedTo,
+                item.amount?.toString(),
+                reg.paymentStatus,
+                ...(reg.members?.flatMap(m => [m.name, m.phone, m.email, m.age?.toString()]) || []),
+            ];
+            return searchableFields.some(field =>
+                field && String(field).toLowerCase().includes(q)
+            );
+        });
+    }, [items, searchQuery]);
+
     // --- Alerts Logic ---
     const alertItems = useMemo(() => {
-        return items.filter(item => {
+        return filteredItems.filter(item => {
             // 1. Always show unverified First Payments / Full Payments
             if (item.type === 'full' || (item.type === 'installment' && item.index === 0)) {
                 return item.status !== 'verified' && item.status !== 'paid';
@@ -237,7 +266,7 @@ export const PaymentTracking = () => {
 
             return false;
         });
-    }, [items]);
+    }, [filteredItems]);
 
     const scrollToItem = (itemId: string) => {
         const element = document.getElementById(itemId);
@@ -249,10 +278,10 @@ export const PaymentTracking = () => {
     };
 
     const columns = {
-        unassigned: items.filter(i => i.assignedTo === 'unassigned'),
-        chaitanya: items.filter(i => i.assignedTo === 'chaitanya'),
-        narayana: items.filter(i => i.assignedTo === 'narayana'),
-        cash: items.filter(i => i.assignedTo === 'cash'),
+        unassigned: filteredItems.filter(i => i.assignedTo === 'unassigned'),
+        chaitanya: filteredItems.filter(i => i.assignedTo === 'chaitanya'),
+        narayana: filteredItems.filter(i => i.assignedTo === 'narayana'),
+        cash: filteredItems.filter(i => i.assignedTo === 'cash'),
     };
 
     const handleDragStart = (e: React.DragEvent, item: PaymentItem) => {
@@ -511,25 +540,51 @@ export const PaymentTracking = () => {
 
     return (
         <div className="h-[calc(100vh-140px)] flex flex-col space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between px-2">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Payment Tracking</h1>
-                    <p className="text-gray-400 text-sm">Drag payments to assign them to accounts.</p>
+            <div className="flex flex-col gap-3 px-2">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">Payment Tracking</h1>
+                        <p className="text-gray-400 text-sm">Drag payments to assign them to accounts.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
+                        <button
+                            onClick={() => exportDetailedPaymentsExcel(registrations, cancellations, {
+                                yatraName: currentYatra?.name || 'Yatra',
+                                twoSharingAmount: currentYatra?.config?.twoSharingAmount || 0,
+                            })}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all text-sm font-medium"
+                            title="Export detailed payments breakdown to Excel"
+                        >
+                            <Download className="w-4 h-4" />
+                            Export Detailed Excel
+                        </button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
-                    <button
-                        onClick={() => exportDetailedPaymentsExcel(registrations, cancellations, {
-                            yatraName: currentYatra?.name || 'Yatra',
-                            twoSharingAmount: currentYatra?.config?.twoSharingAmount || 0,
-                        })}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all text-sm font-medium"
-                        title="Export detailed payments breakdown to Excel"
-                    >
-                        <Download className="w-4 h-4" />
-                        Export Detailed Excel
-                    </button>
+                {/* Search Bar */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search by name, phone, email, UTR, remarks, amount..."
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-gray-200 placeholder:text-gray-500 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/25 transition-all"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
+                {searchQuery && (
+                    <p className="text-xs text-gray-500">
+                        Showing <span className="text-purple-400 font-medium">{filteredItems.length}</span> of <span className="text-gray-400">{items.length}</span> items matching "<span className="text-gray-300">{searchQuery}</span>"
+                    </p>
+                )}
             </div>
 
             {/* Alerts Carousel */}
