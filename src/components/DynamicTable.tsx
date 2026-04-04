@@ -242,7 +242,8 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
         }
 
         // Show family link badge for name column
-        if (col.key === 'name' && row.familyGroupId) {
+        const isLinked = row.familyGroupId || (row.mergedFrom?.length ?? 0) > 0;
+        if (col.key === 'name' && isLinked) {
             return (
                 <div className="flex items-center gap-2">
                     <span className="text-gray-300 font-medium">{value?.toString() || '-'}</span>
@@ -318,13 +319,13 @@ export const DynamicTable = ({ columns, data, isLoading, onRowClick, onAction, a
                                                                 onClick={(e) => { e.stopPropagation(); onAction('merge', row); }}
                                                                 className={cn(
                                                                     "p-1.5 rounded-md transition-colors relative",
-                                                                    row.familyGroupId
+                                                                    (row.familyGroupId || (row.mergedFrom?.length ?? 0) > 0)
                                                                         ? "text-emerald-300 bg-emerald-500/20 ring-1 ring-emerald-400/40 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
                                                                         : "text-indigo-400 hover:bg-indigo-500/10"
                                                                 )}
-                                                                title={row.familyGroupId ? "Linked as family — click to manage" : "Link with another registration as family"}
+                                                                title={row.familyGroupId ? "Linked as family — click to manage" : (row.mergedFrom?.length ?? 0) > 0 ? "Previously merged registration" : "Link with another registration as family"}
                                                             >
-                                                                {row.familyGroupId
+                                                                {(row.familyGroupId || (row.mergedFrom?.length ?? 0) > 0)
                                                                     ? <Link2 className="w-4 h-4" />
                                                                     : <GitMerge className="w-4 h-4" />
                                                                 }
