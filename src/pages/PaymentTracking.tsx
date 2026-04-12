@@ -48,11 +48,18 @@ export const PaymentTracking = () => {
     };
 
     // Normalize Data into Draggable Items
+    // Build a set of cancelled registration IDs to exclude from the board
+    const cancelledRegIds = useMemo(() => {
+        return new Set(cancellations.map(c => c.originalRegistrationId));
+    }, [cancellations]);
+
     const items = useMemo(() => {
         const list: PaymentItem[] = [];
         const twoSharingAmount = currentYatra?.config?.twoSharingAmount || 0;
 
         registrations.forEach(reg => {
+            // Skip cancelled registrations entirely
+            if (reg.status === 'cancelled' || cancelledRegIds.has(reg.id)) return;
             // Logic for Hampi-style (Installments)
             if (reg.paymentDetails?.installments?.length) {
                 reg.paymentDetails.installments.forEach((inst, idx) => {
@@ -83,7 +90,9 @@ export const PaymentTracking = () => {
                         // Firestore doesn't inherently support m.assignedTo per installment yet, 
                         // so we check if there's an override like `inst.memberAssignments?.[mIdx]`
                         // If not, we just use the base installment assignment.
-                        return (inst as any).memberAssignments?.[mIdx] !== undefined ? (inst as any).memberAssignments[mIdx] : baseAssignedTo;
+                        const ma = (inst as any).memberAssignments?.[mIdx];
+                        // Treat both null and undefined as "no assignment" — use base
+                        return (ma !== undefined && ma !== null) ? ma : baseAssignedTo;
                     });
                     
                     const allSame = memberAssignments?.length ? memberAssignments.every((a: any) => a === memberAssignments[0]) : true;
@@ -208,7 +217,7 @@ export const PaymentTracking = () => {
             }
         });
         return list;
-    }, [registrations, currentYatra]);
+    }, [registrations, currentYatra, cancelledRegIds]);
 
     // --- Search Filter Logic ---
     const filteredItems = useMemo(() => {
@@ -431,6 +440,13 @@ export const PaymentTracking = () => {
                         return (inst.status === 'paid' || (inst.status as string) === 'verified') ? acc + (inst.amount || 0) : acc;
                     }, 0);
                     updates['paymentDetails.amountPaid'] = newAmountPaid;
+
+                    // Update top-level paymentStatus if all installments are now assigned/paid
+                    const allInstPaid = installments.every(inst => inst.status === 'paid' || (inst.status as string) === 'verified');
+                    if (allInstPaid) {
+                        updates['paymentStatus'] = 'verified';
+                        updates['paymentDetails.paymentStatus'] = 'verified';
+                    }
                 }
 
                 if (hasMemberUpdates) {
@@ -763,7 +779,23 @@ const Column = ({ title, items, color, onDrop, onDragOver, onDragStart, highligh
                 else if (idx === 3) groups['4th Installment'].push(item);
                 else groups['Other'].push(item);
             } else if (item.type === 'member') {
-                groups['Other'].push(item);
+                // Split member cards should still go into the correct installment group
+                if (item.installmentData && typeof item.id === 'string') {
+                    // Parse installment index from the id: '{regId}_inst_{idx}_member_{mIdx}'
+                    const instIdxMatch = item.id.match(/_inst_(\d+)_/);
+                    if (instIdxMatch) {
+                        const idx = parseInt(instIdxMatch[1], 10);
+                        if (idx === 0) groups['1st Installment'].push(item);
+                        else if (idx === 1) groups['2nd Installment'].push(item);
+                        else if (idx === 2) groups['3rd Installment'].push(item);
+                        else if (idx === 3) groups['4th Installment'].push(item);
+                        else groups['Other'].push(item);
+                    } else {
+                        groups['Other'].push(item);
+                    }
+                } else {
+                    groups['Other'].push(item);
+                }
             } else {
                 groups['Other'].push(item);
             }
