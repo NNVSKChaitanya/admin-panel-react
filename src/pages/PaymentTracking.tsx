@@ -8,6 +8,7 @@ import { Banknote, GripVertical, Loader2, AlertCircle, Calendar, Eye, ExternalLi
 import { cn } from '../lib/utils';
 import { RegistrationDetailsModal } from '../components/RegistrationDetailsModal';
 import { exportDetailedPaymentsExcel } from '../utils/detailedPaymentExport';
+import { exportSimpleAccountsExcel } from '../utils/simpleAccountExport';
 
 // --- Types for the Board ---
 interface PaymentItem {
@@ -565,6 +566,17 @@ export const PaymentTracking = () => {
                     <div className="flex items-center gap-3">
                         {isUpdating && <span className="text-sm text-yellow-400 animate-pulse flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Updating...</span>}
                         <button
+                            onClick={() => exportSimpleAccountsExcel(registrations, cancellations, {
+                                yatraName: currentYatra?.name || 'Yatra',
+                                twoSharingAmount: currentYatra?.config?.twoSharingAmount || 0,
+                            })}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition-all text-sm font-medium"
+                            title="Export simple accounts summary to Excel"
+                        >
+                            <Download className="w-4 h-4" />
+                            Summary Export
+                        </button>
+                        <button
                             onClick={() => exportDetailedPaymentsExcel(registrations, cancellations, {
                                 yatraName: currentYatra?.name || 'Yatra',
                                 twoSharingAmount: currentYatra?.config?.twoSharingAmount || 0,
@@ -573,7 +585,7 @@ export const PaymentTracking = () => {
                             title="Export detailed payments breakdown to Excel"
                         >
                             <Download className="w-4 h-4" />
-                            Export Detailed Excel
+                            Detailed Export
                         </button>
                     </div>
                 </div>
