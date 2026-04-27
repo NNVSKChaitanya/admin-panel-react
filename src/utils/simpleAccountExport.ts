@@ -227,7 +227,7 @@ export async function exportSimpleAccountsExcel(
     cancellations: Cancellation[],
     config: ExportConfig = {}
 ) {
-    const { yatraName = 'Yatra', twoSharingAmount = 0 } = config;
+    const { yatraName = 'Yatra' } = config;
 
     const groups = buildRegistrationGroups(registrations);
 
@@ -277,7 +277,7 @@ export async function exportSimpleAccountsExcel(
                 if (allSame) {
                     instTotals[memberAssignments[0] || baseAccount][colIdx] += inst.amount || 0;
                 } else {
-                    reg.members.forEach((m, mi) => {
+                    reg.members.forEach((_, mi) => {
                         const mAmount = (inst.amount || 0) / (reg.members.length || 1);
                         instTotals[memberAssignments[mi] || baseAccount][colIdx] += mAmount;
                     });
